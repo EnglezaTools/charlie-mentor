@@ -37,7 +37,8 @@ module.exports = async (req, res) => {
   try {
     await supabase.from('activity_log').insert([{
       user_id: event.senderUserID || event.userID || event.user?.id || 'unknown',
-      event_type: 'WEBHOOK_RAW',
+      activity_type: 'WEBHOOK_RAW',
+      activity_date: new Date().toISOString().split('T')[0],
       metadata: { type: event.type, payload: event }
     }]);
   } catch (logErr) {
