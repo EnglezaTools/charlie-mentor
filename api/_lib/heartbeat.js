@@ -275,4 +275,124 @@ async function deleteWebhook(webhookId) {
   }
 }
 
-module.exports = { findUser, syncAll, sendDirectMessage, getDirectMessages, createWebhook, listWebhooks, deleteWebhook };
+/**
+ * Get a user by their Heartbeat user ID
+ */
+async function getUserById(userId) {
+  try {
+    const resp = await fetch(`${HEARTBEAT_BASE}/users/${userId}`, {
+      headers: headers()
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const user = data.data || data.user || data;
+      if (user && user.id) {
+        return {
+          heartbeat_id: user.id,
+          name: user.name || user.display_name || '',
+          first_name: (user.name || user.display_name || '').split(' ')[0],
+          email: user.email || '',
+          bio: user.bio || '',
+          groups: Array.isArray(user.groups) ? user.groups : [],
+          onboarding_responses: user.onboardingResponses || user.onboarding_responses || {}
+        };
+      }
+    }
+  } catch (err) {
+    console.error('[Heartbeat] getUserById failed:', err.message);
+  }
+
+  // Fallback: scan community cache
+  try {
+    const { data: cache } = await supabase
+      .from('community_cache')
+      .select('value')
+      .eq('key', 'members')
+      .single();
+
+    if (cache && Array.isArray(cache.value)) {
+      const found = cache.value.find(m => m.id === userId || m._id === userId);
+      if (found) {
+        const rawGroups = found.groups || found.badges || [];
+        const groupNames = rawGroups.map(g =>
+          typeof g === 'string' ? g : (g.name || g.title || JSON.stringify(g))
+        );
+        return {
+          heartbeat_id: found.id || found._id,
+          name: found.name || '',
+          first_name: (found.name || '').split(' ')[0],
+          email: found.email || '',
+          bio: found.bio || '',
+          groups: groupNames,
+          onboarding_responses: found.onboardingResponses || {}
+        };
+      }
+    }
+  } catch (err) {
+    console.error('[Heartbeat] getUserById cache fallback failed:', err.message);
+  }
+
+  return null;
+}
+
+/**
+ * Get all community members (from cache or live API)
+ * Returns simplified member objects
+ */
+async function getAllMembers() {
+  // Try cache first
+  try {
+    const { data: cache } = await supabase
+      .from('community_cache')
+      .select('value')
+      .eq('key', 'members')
+      .single();
+
+    if (cache && Array.isArray(cache.value) && cache.value.length > 0) {
+      return cache.value.map(m => {
+        const rawGroups = m.groups || m.badges || [];
+        const groupNames = rawGroups.map(g =>
+          typeof g === 'string' ? g : (g.name || g.title || '')
+        ).filter(Boolean);
+        return {
+          heartbeat_id: m.id || m._id,
+          name: m.name || '',
+          first_name: (m.name || '').split(' ')[0],
+          email: m.email || '',
+          bio: m.bio || '',
+          groups: groupNames,
+          onboarding_responses: m.onboardingResponses || {},
+          created_at: m.createdAt || m.created_at || null,
+          role: m.role || 'member',
+          is_admin: m.isAdmin || false
+        };
+      });
+    }
+  } catch (err) {
+    console.error('[Heartbeat] getAllMembers cache failed:', err.message);
+  }
+
+  // Fallback: live API
+  try {
+    let allMembers = [];
+    let page = 1;
+    while (page <= 30) {
+      const resp = await fetch(`${HEARTBEAT_BASE}/users?page=${page}&per_page=100`, {
+        headers: headers()
+      });
+      if (!resp.ok) break;
+      const data = await resp.json();
+      const users = data.data || data.users || data || [];
+      const arr = Array.isArray(users) ? users : [];
+      allMembers = allMembers.concat(arr);
+      if (arr.length < 100) break;
+      page++;
+    }
+    return allMembers;
+  } catch (err) {
+    console.error('[Heartbeat] getAllMembers live API failed:', err.message);
+    return [];
+  }
+}
+
+module.exports = { findUser, getUserById, getAllMembers, syncAll, sendDirectMessage, getDirectMessages, createWebhook, listWebhooks, deleteWebhook };

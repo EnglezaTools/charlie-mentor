@@ -1,4 +1,4 @@
-const { sendDirectMessage, getDirectMessages, findUser } = require('./_lib/heartbeat');
+const { sendDirectMessage, getDirectMessages, findUser, getUserById } = require('./_lib/heartbeat');
 const { callOpenAI, buildSystemPrompt } = require('./_lib/charlie');
 const { supabase } = require('./_lib/supabase');
 
@@ -28,6 +28,9 @@ module.exports = async (req, res) => {
       
       case 'GROUP_JOIN':
         return await handleGroupJoin(event, res);
+
+      case 'USER_UPDATE':
+        return await handleUserUpdate(event, res);
       
       default:
         console.log('[Webhook] Unknown event type:', event.type);
@@ -222,6 +225,147 @@ Scrie-mi oricând - sunt chiar aici în mesagerie. Hai să facem treabă bună �
   } catch (err) {
     console.error('[USER_JOIN] Handler error:', err.message);
     return res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * When a user's profile or groups are updated — used to capture logins
+ * Heartbeat fires this when the "Log-in" or "Active" group is assigned
+ */
+async function handleUserUpdate(event, res) {
+  try {
+    const userId = event.id || event.userID || event.user_id;
+    if (!userId) {
+      return res.status(200).json({ handled: true, skipped: 'no_user_id' });
+    }
+
+    // Skip Charlie's own account
+    if (userId === CHARLIE_USER_ID) {
+      return res.status(200).json({ handled: true, skipped: 'charlie_account' });
+    }
+
+    console.log(`[USER_UPDATE] Checking user ${userId}`);
+
+    // Fetch user to inspect their groups
+    const user = await getUserById(userId);
+    if (!user) {
+      console.log(`[USER_UPDATE] Could not find user ${userId}`);
+      return res.status(200).json({ handled: true, skipped: 'user_not_found' });
+    }
+
+    // Skip admins
+    if (user.is_admin) {
+      return res.status(200).json({ handled: true, skipped: 'admin' });
+    }
+
+    const groups = user.groups || [];
+    const groupStr = groups.join(' ').toLowerCase();
+    const hasLoginSignal = groupStr.includes('log-in') || groupStr.includes('login') || groupStr.includes('active');
+
+    if (!hasLoginSignal) {
+      return res.status(200).json({ handled: true, skipped: 'no_login_signal' });
+    }
+
+    // Record login for today (Romanian time, UTC+2)
+    const romanianNow = new Date(Date.now() + 2 * 3600 * 1000);
+    const loginDate = romanianNow.toISOString().split('T')[0];
+
+    const { error: loginErr } = await supabase
+      .from('daily_logins')
+      .upsert({
+        user_id: userId,
+        login_date: loginDate,
+        recorded_at: new Date().toISOString()
+      }, { onConflict: 'user_id,login_date' });
+
+    if (loginErr) {
+      console.warn('[USER_UPDATE] daily_logins upsert error:', loginErr.message);
+    } else {
+      console.log(`[USER_UPDATE] ✓ Recorded login for ${user.first_name || userId} on ${loginDate}`);
+    }
+
+    // Check if this is a "return after absence" — send welcome-back if inactive 3+ days
+    try {
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString().split('T')[0];
+      const { data: recentLogins } = await supabase
+        .from('daily_logins')
+        .select('login_date')
+        .eq('user_id', userId)
+        .gt('login_date', threeDaysAgo)
+        .order('login_date', { ascending: false });
+
+      // Only 1 login (today's) means they haven't logged in for 3+ days
+      if (recentLogins && recentLogins.length <= 1) {
+        // Check when Charlie last proactively messaged them
+        const { data: studentRecord } = await supabase
+          .from('students')
+          .select('last_charlie_proactive')
+          .eq('heartbeat_id', userId)
+          .single();
+
+        const lastProactive = studentRecord?.last_charlie_proactive;
+        const daysSinceProactive = lastProactive
+          ? Math.floor((Date.now() - new Date(lastProactive).getTime()) / (24 * 3600 * 1000))
+          : 999;
+
+        // Only welcome back if Charlie hasn't messaged in 2+ days
+        if (daysSinceProactive >= 2) {
+          const welcomeBackMsg = await generateWelcomeBack(user);
+          if (welcomeBackMsg) {
+            await sendDirectMessage(userId, welcomeBackMsg);
+            await supabase
+              .from('students')
+              .upsert({
+                heartbeat_id: userId,
+                student_id: userId,
+                email: user.email || '',
+                name: user.name || '',
+                last_charlie_proactive: new Date().toISOString()
+              }, { onConflict: 'heartbeat_id' });
+            console.log(`[USER_UPDATE] Welcome-back sent to ${user.first_name}`);
+          }
+        }
+      }
+    } catch (wbErr) {
+      console.warn('[USER_UPDATE] Welcome-back check failed:', wbErr.message);
+    }
+
+    return res.status(200).json({ handled: true, login_recorded: true, date: loginDate });
+  } catch (err) {
+    console.error('[USER_UPDATE] Handler error:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * Generate a warm welcome-back message for a returning student
+ */
+async function generateWelcomeBack(user) {
+  try {
+    const firstName = user.first_name || 'prietene';
+    const groups = (user.groups || []).join(', ');
+    const messages = [
+      {
+        role: 'system',
+        content: `Ești Charlie, mentorul personal de engleză la Engleza Britanică (academie pentru vorbitori de română). Ești cald, empatic, ca un prieten bun. Vorbești în română.`
+      },
+      {
+        role: 'user',
+        content: `Scrie un mesaj SCURT de "bine ai revenit" pentru ${firstName}, care tocmai s-a conectat după câteva zile de absență.
+Cursuri/grupuri: ${groups || 'student obișnuit'}
+Mesajul trebuie să fie:
+- 2 propoziții MAXIM
+- Cald și personal, nu generic
+- Să nu înceapă cu "Bună ziua" sau formule formale
+- Să îl facă să se simtă binevenit și motivat să continue
+- Să nu predea engleza, doar să încurajeze`
+      }
+    ];
+    const { callOpenAI } = require('./_lib/charlie');
+    return await callOpenAI(messages);
+  } catch (err) {
+    console.warn('[generateWelcomeBack] Error:', err.message);
+    return null;
   }
 }
 

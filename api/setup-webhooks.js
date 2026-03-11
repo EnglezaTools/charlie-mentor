@@ -44,6 +44,10 @@ async function setupWebhooks(req, res) {
     {
       name: 'GROUP_JOIN',
       filter: null
+    },
+    {
+      name: 'USER_UPDATE',
+      filter: null
     }
   ];
 
