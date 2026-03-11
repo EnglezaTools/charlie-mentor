@@ -1,5 +1,4 @@
-const { sendDirectMessage } = require('./_lib/heartbeat');
-const { findUser } = require('./_lib/heartbeat');
+const { sendDirectMessage, getDirectMessages, findUser } = require('./_lib/heartbeat');
 const { callOpenAI, buildSystemPrompt } = require('./_lib/charlie');
 const { supabase } = require('./_lib/supabase');
 
@@ -17,7 +16,7 @@ module.exports = async (req, res) => {
   try {
     const event = req.body;
     
-    console.log('[Webhook] Event received:', event.type);
+    console.log('[Webhook] Event received:', JSON.stringify(event).substring(0, 300));
 
     // Handle different event types
     switch (event.type) {
@@ -32,7 +31,7 @@ module.exports = async (req, res) => {
       
       default:
         console.log('[Webhook] Unknown event type:', event.type);
-        return res.status(200).json({ handled: false });
+        return res.status(200).json({ handled: false, type: event.type });
     }
   } catch (err) {
     console.error('[Webhook] Error:', err.message);
@@ -45,47 +44,116 @@ module.exports = async (req, res) => {
  */
 async function handleDirectMessage(event, res) {
   try {
-    const { senderUserID, chatMessageID } = event;
+    const { senderUserID, receiverUserID, chatID, chatMessageID } = event;
 
     // Don't respond to our own messages
     if (senderUserID === CHARLIE_USER_ID) {
-      return res.status(200).json({ handled: true, skipped: true });
+      return res.status(200).json({ handled: true, skipped: 'own_message' });
     }
 
-    console.log(`[DM] Message received: ${chatMessageID} from ${senderUserID}`);
+    // Only handle messages sent TO Charlie
+    if (receiverUserID && receiverUserID !== CHARLIE_USER_ID) {
+      return res.status(200).json({ handled: true, skipped: 'not_for_charlie' });
+    }
 
-    // TODO: Get message content from Heartbeat API
-    // For now, we'll need to fetch the actual message content
-    // Heartbeat webhook only sends IDs, not the message text
-    
-    // Get student profile
-    const student = await findUser(senderUserID);
+    console.log(`[DM] Message from ${senderUserID}, chatID: ${chatID}, msgID: ${chatMessageID}`);
+
+    // Fetch actual message content from Heartbeat API
+    let messageContent = '';
+    try {
+      const chatData = await getDirectMessages(chatID);
+      // Heartbeat may return array or object with messages property
+      const messages = Array.isArray(chatData) 
+        ? chatData 
+        : (chatData.messages || chatData.data || chatData.chatMessages || []);
+      
+      // Find the specific message by ID
+      const found = messages.find(m => 
+        m.id === chatMessageID || 
+        m._id === chatMessageID || 
+        m.chatMessageID === chatMessageID
+      );
+      
+      // Extract text from found message or most recent from sender
+      if (found) {
+        messageContent = extractText(found);
+      }
+      
+      if (!messageContent && messages.length > 0) {
+        // Fallback: most recent message from sender
+        const fromSender = messages.filter(m => 
+          m.userID === senderUserID || 
+          m.senderUserID === senderUserID ||
+          m.sender?.id === senderUserID
+        );
+        if (fromSender.length > 0) {
+          const latest = fromSender[fromSender.length - 1];
+          messageContent = extractText(latest);
+        }
+      }
+      
+      console.log(`[DM] Message content: "${messageContent.substring(0, 150)}"`);
+    } catch (fetchErr) {
+      console.warn('[DM] Could not fetch message content:', fetchErr.message);
+    }
+
+    if (!messageContent) {
+      messageContent = '(student sent a message - content unavailable)';
+    }
+
+    // Get student profile from Heartbeat
+    const student = await findUser(senderUserID).catch(() => null);
     const studentId = student?.heartbeat_id || senderUserID;
 
-    // Build context
+    // Build Charlie's context-aware system prompt
     const systemPrompt = await buildSystemPrompt(studentId);
-    
-    // TODO: Fetch message content from Heartbeat API using chatID/chatMessageID
-    const messageContent = "Thank you for reaching out!"; // Placeholder
-    
-    // Get Charlie's response
-    const response = await callOpenAI([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: messageContent }
-    ]);
 
-    // Send response back to student via Heartbeat API
+    // Get conversation history for continuity
+    const { data: history } = await supabase
+      .from('conversations')
+      .select('user_message, charlie_response')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    // Build messages array for OpenAI
+    const messages = [{ role: 'system', content: systemPrompt }];
+    
+    // Add recent history (reversed to be chronological)
+    if (history && history.length > 0) {
+      const recentHistory = history.reverse();
+      for (const h of recentHistory) {
+        messages.push({ role: 'user', content: h.user_message });
+        messages.push({ role: 'assistant', content: h.charlie_response });
+      }
+    }
+    
+    // Add current message
+    messages.push({ role: 'user', content: messageContent });
+
+    // Get Charlie's response
+    const response = await callOpenAI(messages);
+
+    // Send response back to student
     await sendDirectMessage(senderUserID, response);
 
-    // Store conversation
-    await supabase
-      .from('conversations')
-      .insert([{
-        student_id: studentId,
-        user_message: messageContent,
-        charlie_response: response,
-        context: JSON.stringify({ event_type: 'DIRECT_MESSAGE', chatMessageID })
-      }]);
+    // Store conversation in database
+    try {
+      await supabase
+        .from('conversations')
+        .insert([{
+          student_id: studentId,
+          user_message: messageContent,
+          charlie_response: response,
+          context: JSON.stringify({ 
+            event_type: 'DIRECT_MESSAGE', 
+            chatID,
+            chatMessageID 
+          })
+        }]);
+    } catch (dbErr) {
+      console.warn('[DM] Could not save conversation:', dbErr.message);
+    }
 
     console.log('[DM] Responded to', senderUserID);
     return res.status(200).json({ handled: true, responded: true });
@@ -96,41 +164,60 @@ async function handleDirectMessage(event, res) {
 }
 
 /**
+ * Extract text content from a message object
+ */
+function extractText(msg) {
+  if (!msg) return '';
+  // Try various field names Heartbeat might use
+  return msg.text || msg.message || msg.body || msg.content || 
+         msg.richText?.text || msg.richText?.body || 
+         (typeof msg.richText === 'string' ? msg.richText : '') || '';
+}
+
+/**
  * When a new student joins the community
  */
 async function handleUserJoin(event, res) {
   try {
-    const { user_id, user_name, user_email } = event;
+    // Heartbeat USER_JOIN event - check various field names
+    const userId = event.userID || event.user_id || event.id;
+    const userName = event.fullName || event.name || event.user_name || event.username || 'novo student';
+    const userEmail = event.email || event.user_email || '';
 
-    console.log(`[USER_JOIN] ${user_name} joined`);
+    console.log(`[USER_JOIN] ${userName} (${userId}) joined`);
 
-    // Get their profile to understand their goals
-    const student = await findUser(user_email || user_name);
-    const studentId = student?.heartbeat_id || user_id;
-    const onboarding = student?.onboarding_responses || {};
+    // Build warm welcome message
+    const welcomeMsg = `Bună ziua, ${userName}! 👋
 
-    // Build welcome message
-    let welcomeMsg = `Salut ${user_name}! 👋 Eu sunt Charlie, mentorul tău de engleză.\n\n`;
-    welcomeMsg += `Sunt aici să te ghidez pe parcursul acestui curs, să te motivez și să te ajut să rămâi concentrat pe obiectivele tale.\n\n`;
-    welcomeMsg += `Nu mă va privi pentru răspunsuri directe la întrebări de engleză - pentru acelea mergem la resurse dedicate.\n\n`;
-    welcomeMsg += `Dar pentru orice alt lucru - progres, dificultăți, motivație, ghidare - sunt aici pentru tine. Hai, ce spui - gata să începem? 🚀`;
+Eu sunt **Charlie**, mentorul tău personal de engleză în această comunitate.
 
-    // Send welcome
-    await sendDirectMessage(user_id, welcomeMsg);
+Sunt aici pentru tine pe tot parcursul călătoriei tale de învățare - să te ghidez, să te motivez, și să celebrăm împreună progresul tău. Nu voi preda lecțiile (pentru asta ai cursurile noastre superbe!), dar sunt mereu disponibil pentru:
 
-    // Store in database
-    await supabase
-      .from('students')
-      .upsert({
-        student_id: studentId,
-        heartbeat_id: user_id,
-        email: user_email || '',
-        name: user_name,
-        onboarding_responses: onboarding,
-        last_interaction: new Date().toISOString()
-      }, { onConflict: 'student_id' });
+✅ Sfaturi despre ce să studiezi și în ce ordine
+✅ Motivație când simți că e greu
+✅ Ghidare când nu știi cum să continuați
+✅ Celebrarea succeselor tale
 
-    console.log('[USER_JOIN] Welcome sent to', user_name);
+Scrie-mi oricând - sunt chiar aici în mesagerie. Hai să facem treabă bună împreună! 🚀`;
+
+    await sendDirectMessage(userId, welcomeMsg);
+
+    // Upsert student record
+    try {
+      await supabase
+        .from('students')
+        .upsert({
+          student_id: userId,
+          heartbeat_id: userId,
+          email: userEmail,
+          name: userName,
+          last_interaction: new Date().toISOString()
+        }, { onConflict: 'heartbeat_id' });
+    } catch (dbErr) {
+      console.warn('[USER_JOIN] Could not save student:', dbErr.message);
+    }
+
+    console.log('[USER_JOIN] Welcome sent to', userName);
     return res.status(200).json({ handled: true, welcomed: true });
   } catch (err) {
     console.error('[USER_JOIN] Handler error:', err.message);
@@ -143,20 +230,23 @@ async function handleUserJoin(event, res) {
  */
 async function handleGroupJoin(event, res) {
   try {
-    const { user_id, user_name, group_name, group_id } = event;
+    const userId = event.userID || event.user_id;
+    const userName = event.fullName || event.name || event.user_name || 'student';
+    const groupName = event.groupName || event.group_name || event.name || 'curs nou';
 
-    console.log(`[GROUP_JOIN] ${user_name} joined "${group_name}"`);
+    console.log(`[GROUP_JOIN] ${userName} joined "${groupName}"`);
 
-    // Get student record
-    const student = await findUser(user_name);
-    const studentId = student?.heartbeat_id || user_id;
+    const courseMsg = `Felicitări, ${userName}! 🎓
 
-    // Build course-start message
-    const courseMsg = `Bun venit în "${group_name}"! 🎓\n\nAcum că ai intrat în curs, voi fi aici să te ajut să ai succes.\n\nAre vreo îngrijorare, întrebare despre progres, sau ai nevoie de motivație? Scrie-mi! 💪`;
+Tocmai ai intrat în **"${groupName}"** - asta e un pas important!
 
-    await sendDirectMessage(user_id, courseMsg);
+Sunt Charlie, mentorul tău, și voi fi alături de tine pe tot parcursul acestui curs. Dacă ai întrebări despre progres, dacă simți că e prea mult sau prea puțin, sau dacă ai nevoie de motivație - scrie-mi direct! 
 
-    console.log('[GROUP_JOIN] Message sent to', user_name);
+Mult succes! 💪`;
+
+    await sendDirectMessage(userId, courseMsg);
+
+    console.log('[GROUP_JOIN] Message sent to', userName);
     return res.status(200).json({ handled: true, notified: true });
   } catch (err) {
     console.error('[GROUP_JOIN] Handler error:', err.message);

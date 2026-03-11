@@ -151,6 +151,27 @@ async function syncAll() {
 }
 
 /**
+ * Get messages from a direct message chat
+ * Returns the 100 most recent messages
+ */
+async function getDirectMessages(chatID) {
+  try {
+    const resp = await fetch(`${HEARTBEAT_BASE}/directMessages/${chatID}`, {
+      method: 'GET',
+      headers: headers()
+    });
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${err}`);
+    }
+    return await resp.json();
+  } catch (err) {
+    console.error('[Heartbeat] Get DMs failed:', err.message);
+    throw err;
+  }
+}
+
+/**
  * Send a direct message to a user
  */
 async function sendDirectMessage(recipientId, message) {
@@ -254,4 +275,4 @@ async function deleteWebhook(webhookId) {
   }
 }
 
-module.exports = { findUser, syncAll, sendDirectMessage, createWebhook, listWebhooks, deleteWebhook };
+module.exports = { findUser, syncAll, sendDirectMessage, getDirectMessages, createWebhook, listWebhooks, deleteWebhook };

@@ -1,6 +1,22 @@
 const { supabase } = require('./supabase');
 const path = require('path');
 const fs = require('fs');
+const OpenAI = require('openai');
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+/**
+ * Call OpenAI with a messages array
+ */
+async function callOpenAI(messages, model = 'gpt-4o-mini') {
+  const completion = await openai.chat.completions.create({
+    model,
+    messages,
+    max_tokens: 500,
+    temperature: 0.8
+  });
+  return completion.choices[0].message.content;
+}
 
 // Static course summary built from community_structure data
 const STATIC_COURSE_SUMMARY = `
@@ -209,4 +225,4 @@ Când ceva e relevant pentru situația studentului, poți referi la materiale sp
 De exemplu: \"Conform lecției Gramatică Săptămâna 5...\", \"Din materialul Vocabular...\", etc.`;
 }
 
-module.exports = { buildSystemPrompt, buildCoursesSummary, buildChannelList, searchTranscripts };
+module.exports = { buildSystemPrompt, buildCoursesSummary, buildChannelList, searchTranscripts, callOpenAI };
