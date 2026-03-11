@@ -237,9 +237,15 @@ async function handleDirectMessage(event) {
     // Ensure student exists in students table (for foreign key)
     try {
       const studentName = student?.name || student?.displayName || 'Unknown';
+      const studentEmail = student?.email || `${senderUserID}@heartbeat.user`;
       await supabase
         .from('students')
-        .upsert({ id: studentId, heartbeat_id: senderUserID, name: studentName }, { onConflict: 'id' });
+        .upsert({ 
+          id: studentId, 
+          heartbeat_id: senderUserID, 
+          name: studentName,
+          email: studentEmail
+        }, { onConflict: 'id', ignoreDuplicates: true });
     } catch (_) {}
 
     // Store conversation in database (two rows: user message + assistant response)
