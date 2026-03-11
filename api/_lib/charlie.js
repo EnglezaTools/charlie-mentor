@@ -132,6 +132,32 @@ async function buildChannelList() {
 }
 
 /**
+ * Search transcripts by keyword
+ */
+async function searchTranscripts(keyword, limit = 3) {
+  try {
+    const { data, error } = await supabase
+      .from('transcripts')
+      .select('title, type, week, lesson_number, part, content')
+      .or(`content.ilike.%${keyword}%,title.ilike.%${keyword}%`)
+      .limit(limit);
+
+    if (error || !data || data.length === 0) return null;
+
+    return data.map(t => ({
+      title: t.title,
+      type: t.type,
+      week: t.week,
+      lesson_number: t.lesson_number,
+      part: t.part,
+      preview: t.content ? t.content.substring(0, 500) : ''
+    }));
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
  * Build the full system prompt for Charlie
  */
 async function buildSystemPrompt(student) {
@@ -152,6 +178,7 @@ Ești ca un părinte sau un mentor cald și încurajator — nu un profesor. Nu 
 - Îl ghidezi spre lecțiile, canalele și instrumentele potrivite din academie
 - Monitorizezi progresul și îl feliciți pentru realizări
 - Îl ajuți să rămână consecvent și să nu renunțe
+- Poți referi la materiale și lecții specifice din baza noastră de transcripturi când e relevant
 
 REGULI STRICTE:
 - Vorbești în principal în română, dar poți folosi engleza când e potrivit contextului
@@ -174,7 +201,12 @@ Bio: ${student.bio || 'Nicio bio'}
 Răspunsuri la înregistrare: ${onboarding}
 Grupuri/Badge-uri: ${groups}
 Membru din: ${student.created_at || 'Necunoscut'}
-Ultima activitate cu Charlie: ${student.last_seen || 'Prima vizită'}`;
+Ultima activitate cu Charlie: ${student.last_seen || 'Prima vizită'}
+
+BAZA DE CUNOȘTINȚE - MATERIALE LECȚII:
+Ai acces la 243 materiale (transcripturi) din toate lecțiile: Gramatică, Vocabular, Pronunție, Exerciții, Teme (Weeks 1-43+).
+Când ceva e relevant pentru situația studentului, poți referi la materiale specifice sau sugera să consulte anumite lecții. 
+De exemplu: \"Conform lecției Gramatică Săptămâna 5...\", \"Din materialul Vocabular...\", etc.`;
 }
 
-module.exports = { buildSystemPrompt, buildCoursesSummary, buildChannelList };
+module.exports = { buildSystemPrompt, buildCoursesSummary, buildChannelList, searchTranscripts };
