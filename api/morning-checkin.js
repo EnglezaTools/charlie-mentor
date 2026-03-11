@@ -48,6 +48,32 @@ module.exports = async (req, res) => {
       }
     }
 
+    // --- Get recent activity from activity_log (last 14 days) ---
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString().split('T')[0];
+    const { data: recentActivity } = await supabase
+      .from('activity_log')
+      .select('user_id, activity_type, activity_date, metadata')
+      .gte('activity_date', fourteenDaysAgo)
+      .order('activity_date', { ascending: false });
+
+    // Build per-user activity summary
+    const activityMap = {};
+    if (recentActivity) {
+      for (const a of recentActivity) {
+        if (!activityMap[a.user_id]) {
+          activityMap[a.user_id] = { posts: 0, courseCompletions: [], lastPostDate: null, lastCourseDate: null };
+        }
+        if (a.activity_type === 'POST') {
+          activityMap[a.user_id].posts++;
+          if (!activityMap[a.user_id].lastPostDate) activityMap[a.user_id].lastPostDate = a.activity_date;
+        }
+        if (a.activity_type === 'COURSE_COMPLETE') {
+          activityMap[a.user_id].courseCompletions.push(a.metadata?.course_name || 'curs');
+          if (!activityMap[a.user_id].lastCourseDate) activityMap[a.user_id].lastCourseDate = a.activity_date;
+        }
+      }
+    }
+
     // --- Score each member ---
     const scored = [];
 
@@ -59,14 +85,16 @@ module.exports = async (req, res) => {
       summary.studentsEvaluated++;
 
       const studentData = studentMap[member.heartbeat_id] || {};
-      const score = calculatePriorityScore(member, studentData);
+      const activityData = activityMap[member.heartbeat_id] || { posts: 0, courseCompletions: [], lastPostDate: null, lastCourseDate: null };
+      const score = calculatePriorityScore(member, studentData, activityData);
 
       if (score > 0) {
         scored.push({
           member,
           studentData,
+          activityData,
           score,
-          reason: buildReason(member, studentData)
+          reason: buildReason(member, studentData, activityData)
         });
       }
     }
@@ -78,9 +106,9 @@ module.exports = async (req, res) => {
     console.log(`[Morning] ${scored.length} students flagged, messaging top ${toMessage.length}`);
 
     // --- Generate and send messages ---
-    for (const { member, studentData, reason } of toMessage) {
+    for (const { member, studentData, activityData, reason } of toMessage) {
       try {
-        const message = await generateProactiveMessage(member, studentData, reason);
+        const message = await generateProactiveMessage(member, studentData, activityData, reason);
         if (!message) {
           summary.skipped++;
           continue;
@@ -127,7 +155,7 @@ module.exports = async (req, res) => {
 /**
  * Calculate priority score (0 = skip, higher = more urgent)
  */
-function calculatePriorityScore(member, studentData) {
+function calculatePriorityScore(member, studentData, activityData = {}) {
   const now = Date.now();
 
   // --- BLOCK conditions (return 0 immediately) ---
@@ -190,13 +218,26 @@ function calculatePriorityScore(member, studentData) {
     score += 1; // Never chatted with Charlie
   }
 
+  // --- Community activity signals ---
+  // Active poster → lower priority (they're engaged)
+  if (activityData.posts >= 3) score -= 3;
+  else if (activityData.posts === 0 && daysSinceJoined > 7) score += 2; // Member but never posted
+
+  // Recently completed a course → great for a celebratory nudge
+  if (activityData.courseCompletions && activityData.courseCompletions.length > 0) {
+    const daysSinceCourse = activityData.lastCourseDate
+      ? Math.floor((now - new Date(activityData.lastCourseDate).getTime()) / (24 * 3600 * 1000))
+      : 999;
+    if (daysSinceCourse <= 2) score += 4; // Just completed — worth acknowledging
+  }
+
   return Math.max(score, 0);
 }
 
 /**
  * Build a human-readable reason for the check-in (for logging)
  */
-function buildReason(member, studentData) {
+function buildReason(member, studentData, activityData = {}) {
   const reasons = [];
   const now = Date.now();
   const groups = (member.groups || []).join(' ').toLowerCase();
@@ -214,6 +255,8 @@ function buildReason(member, studentData) {
     if (days >= 3) reasons.push(`${days}d since last login`);
   }
   if (!studentData.last_interaction && daysSinceJoined > 3) reasons.push('never chatted with Charlie');
+  if (activityData.posts === 0 && daysSinceJoined > 7) reasons.push('never posted in community');
+  if (activityData.courseCompletions?.length > 0) reasons.push(`recently completed: ${activityData.courseCompletions[0]}`);
 
   return reasons.join(', ') || 'general check-in';
 }
@@ -221,7 +264,7 @@ function buildReason(member, studentData) {
 /**
  * Generate a personalised proactive message using OpenAI
  */
-async function generateProactiveMessage(member, studentData, reason) {
+async function generateProactiveMessage(member, studentData, activityData = {}, reason) {
   try {
     const firstName = member.first_name || member.name || 'prietene';
     const now = Date.now();
@@ -252,6 +295,8 @@ async function generateProactiveMessage(member, studentData, reason) {
       daysSinceJoined !== null ? `- Zile de la înregistrare: ${daysSinceJoined}` : null,
       currentStreak > 0 ? `- Streak curent: ${currentStreak} zile consecutive` : null,
       daysSinceLogin !== null ? `- Ultima autentificare: acum ${daysSinceLogin} zile` : '- Nu s-a autentificat recent',
+      activityData.posts > 0 ? `- Postări în comunitate (ultimele 14 zile): ${activityData.posts}` : '- Nu a postat în comunitate recent',
+      activityData.courseCompletions?.length > 0 ? `- Cursuri finalizate recent: ${activityData.courseCompletions.join(', ')}` : null,
       groups.length > 0 ? `- Cursuri/grupuri: ${groups.slice(0, 5).join(', ')}` : null,
       onboardingText ? `- Context înregistrare: ${onboardingText}` : null,
       `- Motiv check-in: ${reason}`

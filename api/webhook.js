@@ -31,6 +31,12 @@ module.exports = async (req, res) => {
 
       case 'USER_UPDATE':
         return await handleUserUpdate(event, res);
+
+      case 'THREAD_CREATE':
+        return await handleThreadCreate(event, res);
+
+      case 'COURSE_COMPLETED':
+        return await handleCourseCompleted(event, res);
       
       default:
         console.log('[Webhook] Unknown event type:', event.type);
@@ -365,6 +371,159 @@ Mesajul trebuie să fie:
     return await callOpenAI(messages);
   } catch (err) {
     console.warn('[generateWelcomeBack] Error:', err.message);
+    return null;
+  }
+}
+
+/**
+ * When a student posts a thread in any channel
+ * Payload: { id: threadID, channelID }
+ * Note: no userID in payload — we fetch thread details to get the author
+ */
+async function handleThreadCreate(event, res) {
+  try {
+    const threadId = event.id;
+    const channelId = event.channelID || event.channelId;
+
+    if (!threadId) {
+      return res.status(200).json({ handled: true, skipped: 'no_thread_id' });
+    }
+
+    console.log(`[THREAD_CREATE] Thread ${threadId} in channel ${channelId}`);
+
+    // Fetch thread details to get author's userID
+    let userId = null;
+    let channelName = channelId;
+    try {
+      const { getThread } = require('./_lib/heartbeat');
+      const thread = await getThread(threadId);
+      userId = thread?.userID || thread?.authorID || thread?.user?.id || null;
+      channelName = thread?.channelName || channelId;
+    } catch (fetchErr) {
+      console.warn('[THREAD_CREATE] Could not fetch thread details:', fetchErr.message);
+    }
+
+    if (!userId) {
+      console.log('[THREAD_CREATE] Could not determine author — recording without user_id');
+      return res.status(200).json({ handled: true, recorded: false, reason: 'no_user_id' });
+    }
+
+    // Skip Charlie's own posts
+    if (userId === CHARLIE_USER_ID) {
+      return res.status(200).json({ handled: true, skipped: 'charlie_account' });
+    }
+
+    // Record activity in activity_log
+    const romanianNow = new Date(Date.now() + 2 * 3600 * 1000);
+    const activityDate = romanianNow.toISOString().split('T')[0];
+
+    await supabase
+      .from('activity_log')
+      .insert([{
+        user_id: userId,
+        activity_type: 'POST',
+        activity_date: activityDate,
+        metadata: { thread_id: threadId, channel_id: channelId, channel_name: channelName }
+      }]);
+
+    console.log(`[THREAD_CREATE] ✓ Recorded POST activity for user ${userId} in ${channelName}`);
+    return res.status(200).json({ handled: true, recorded: true, user_id: userId });
+  } catch (err) {
+    console.error('[THREAD_CREATE] Handler error:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * When a student completes a course
+ * Payload: { courseID, courseName, userID }
+ */
+async function handleCourseCompleted(event, res) {
+  try {
+    const userId = event.userID || event.user_id;
+    const courseId = event.courseID || event.course_id;
+    const courseName = event.courseName || event.course_name || 'un curs';
+
+    if (!userId) {
+      return res.status(200).json({ handled: true, skipped: 'no_user_id' });
+    }
+
+    // Skip Charlie's own account
+    if (userId === CHARLIE_USER_ID) {
+      return res.status(200).json({ handled: true, skipped: 'charlie_account' });
+    }
+
+    console.log(`[COURSE_COMPLETED] User ${userId} completed "${courseName}"`);
+
+    // Record activity in activity_log
+    const romanianNow = new Date(Date.now() + 2 * 3600 * 1000);
+    const activityDate = romanianNow.toISOString().split('T')[0];
+
+    await supabase
+      .from('activity_log')
+      .insert([{
+        user_id: userId,
+        activity_type: 'COURSE_COMPLETE',
+        activity_date: activityDate,
+        metadata: { course_id: courseId, course_name: courseName }
+      }]);
+
+    // Fetch user details for personalised congratulations
+    let userName = 'prietene';
+    try {
+      const { getUserById } = require('./_lib/heartbeat');
+      const user = await getUserById(userId);
+      userName = user?.first_name || user?.name || 'prietene';
+    } catch (e) {}
+
+    // Generate and send congratulations message
+    const congratsMsg = await generateCourseCongratsMessage(userName, courseName);
+    if (congratsMsg) {
+      await sendDirectMessage(userId, congratsMsg);
+
+      // Update last_charlie_proactive timestamp
+      await supabase
+        .from('students')
+        .upsert({
+          heartbeat_id: userId,
+          student_id: userId,
+          last_charlie_proactive: new Date().toISOString()
+        }, { onConflict: 'heartbeat_id' });
+
+      console.log(`[COURSE_COMPLETED] ✓ Congratulations sent to ${userName} for "${courseName}"`);
+    }
+
+    return res.status(200).json({ handled: true, recorded: true, congratulated: !!congratsMsg });
+  } catch (err) {
+    console.error('[COURSE_COMPLETED] Handler error:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * Generate a personalised course completion congratulations message
+ */
+async function generateCourseCongratsMessage(firstName, courseName) {
+  try {
+    const messages = [
+      {
+        role: 'system',
+        content: `Ești Charlie, mentorul personal de engleză la academia Engleza Britanică. Ești cald, entuziast, ca un prieten bun care sărbătorește cu tine. Vorbești în română.`
+      },
+      {
+        role: 'user',
+        content: `${firstName} tocmai a finalizat cursul "${courseName}". Scrie un mesaj SCURT de felicitare:
+- Maximum 2-3 propoziții
+- Entuziast dar nu exagerat
+- Menționează cursul specific
+- Încurajează-l să continue cu următorul pas
+- Nu fi formal, fii ca un prieten care sărbătorește
+- Semnează: "— Charlie 🎉"`
+      }
+    ];
+    return await callOpenAI(messages);
+  } catch (err) {
+    console.warn('[generateCourseCongratsMessage] Error:', err.message);
     return null;
   }
 }

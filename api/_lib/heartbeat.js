@@ -395,4 +395,24 @@ async function getAllMembers() {
   }
 }
 
-module.exports = { findUser, getUserById, getAllMembers, syncAll, sendDirectMessage, getDirectMessages, createWebhook, listWebhooks, deleteWebhook };
+/**
+ * Fetch a single thread by ID (to get author userID from THREAD_CREATE webhook)
+ */
+async function getThread(threadId) {
+  try {
+    const resp = await fetch(`${HEARTBEAT_BASE}/threads/${threadId}`, {
+      headers: headers()
+    });
+    if (!resp.ok) {
+      console.warn(`[Heartbeat] getThread ${threadId} returned ${resp.status}`);
+      return null;
+    }
+    const data = await resp.json();
+    return data.data || data.thread || data;
+  } catch (err) {
+    console.error('[Heartbeat] getThread error:', err.message);
+    return null;
+  }
+}
+
+module.exports = { findUser, getUserById, getAllMembers, syncAll, sendDirectMessage, getDirectMessages, createWebhook, listWebhooks, deleteWebhook, getThread };

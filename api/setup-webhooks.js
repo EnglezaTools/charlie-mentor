@@ -48,6 +48,14 @@ async function setupWebhooks(req, res) {
     {
       name: 'USER_UPDATE',
       filter: null
+    },
+    {
+      name: 'THREAD_CREATE',
+      filter: null  // Capture all channel posts
+    },
+    {
+      name: 'COURSE_COMPLETED',
+      filter: null  // Capture all course completions
     }
   ];
 
