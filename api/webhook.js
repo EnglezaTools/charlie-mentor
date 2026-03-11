@@ -277,9 +277,11 @@ async function handleDirectMessage(event) {
 function extractText(msg) {
   if (!msg) return '';
   // Try various field names Heartbeat might use
-  return msg.text || msg.message || msg.body || msg.content || 
+  const raw = msg.text || msg.message || msg.body || msg.content || 
          msg.richText?.text || msg.richText?.body || 
          (typeof msg.richText === 'string' ? msg.richText : '') || '';
+  // Strip HTML tags (Heartbeat sends content as HTML like <p>hello</p>)
+  return raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /**

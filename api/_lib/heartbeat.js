@@ -190,7 +190,13 @@ async function sendDirectMessage(recipientId, message) {
       throw new Error(`HTTP ${resp.status}: ${err}`);
     }
 
-    return await resp.json();
+    // Heartbeat returns 204 No Content on success - no body to parse
+    if (resp.status === 204) {
+      return { success: true };
+    }
+
+    const text = await resp.text();
+    return text ? JSON.parse(text) : { success: true };
   } catch (err) {
     console.error('[Heartbeat] Send DM failed:', err.message);
     throw err;
