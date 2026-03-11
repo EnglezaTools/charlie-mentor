@@ -5,6 +5,27 @@ const { supabase } = require('./_lib/supabase');
 const CHARLIE_USER_ID = '4123ccdd-a337-4438-b5ff-fcaad1464102';
 
 /**
+ * Detect the webhook event type from payload shape.
+ * Heartbeat does NOT include a 'type' field in webhook payloads.
+ * Each event type has a distinct payload structure:
+ *   DIRECT_MESSAGE: { senderUserID, receiverUserID, chatID, chatMessageID }
+ *   COURSE_COMPLETED: { courseID, userID } or { courseName, userID }
+ *   GROUP_JOIN: { userID, groupID }
+ *   THREAD_CREATE: { id, channelID }
+ *   USER_JOIN: { id, name, email }
+ *   USER_UPDATE: { id } (only field)
+ */
+function detectEventType(event) {
+  if (event.senderUserID && event.chatID) return 'DIRECT_MESSAGE';
+  if (event.courseID || event.courseName) return 'COURSE_COMPLETED';
+  if (event.groupID) return 'GROUP_JOIN';
+  if (event.channelID && event.id) return 'THREAD_CREATE';
+  if (event.email && event.name) return 'USER_JOIN';
+  if (event.id && !event.channelID && !event.email) return 'USER_UPDATE';
+  return 'UNKNOWN';
+}
+
+/**
  * Send a response as multiple natural DM messages, split on [SPLIT] markers
  * Adds realistic typing delays between messages
  */
@@ -33,13 +54,17 @@ module.exports = async (req, res) => {
   const event = req.body;
   console.log('[Webhook] Event received:', JSON.stringify(event).substring(0, 500));
 
+  // Detect event type from payload shape FIRST so we can log it
+  const detectedType = detectEventType(event);
+  console.log('[Webhook] Detected event type:', detectedType);
+
   // Log raw payload to Supabase for debugging
   try {
     await supabase.from('activity_log').insert([{
-      user_id: event.senderUserID || event.userID || event.user?.id || 'unknown',
+      user_id: event.senderUserID || event.userID || event.user?.id || event.id || 'unknown',
       activity_type: 'WEBHOOK_RAW',
       activity_date: new Date().toISOString().split('T')[0],
-      metadata: { type: event.type, payload: event }
+      metadata: { detectedType, payload: event }
     }]);
   } catch (logErr) {
     console.warn('[Webhook] Debug log failed:', logErr.message);
@@ -48,7 +73,7 @@ module.exports = async (req, res) => {
   // Process the event BEFORE responding (Vercel kills function after response)
   let result = 'ignored';
   try {
-    switch (event.type) {
+    switch (detectedType) {
       case 'DIRECT_MESSAGE':
         await handleDirectMessage(event);
         result = 'processed';
@@ -74,7 +99,7 @@ module.exports = async (req, res) => {
         result = 'processed';
         break;
       default:
-        console.log('[Webhook] Unknown event type:', event.type);
+        console.log('[Webhook] Could not detect event type from payload:', JSON.stringify(event).substring(0, 300));
     }
   } catch (err) {
     console.error('[Webhook] Processing error:', err.message, err.stack);
@@ -82,7 +107,7 @@ module.exports = async (req, res) => {
   }
 
   // Respond AFTER processing is complete
-  return res.status(200).json({ received: true, type: event.type, result });
+  return res.status(200).json({ received: true, detectedType, result });
 };
 
 /**
