@@ -234,6 +234,14 @@ async function handleDirectMessage(event) {
     step = 'SEND_REPLY';
     await sendSplitMessages(senderUserID, response);
 
+    // Ensure student exists in students table (for foreign key)
+    try {
+      const studentName = student?.name || student?.displayName || 'Unknown';
+      await supabase
+        .from('students')
+        .upsert({ id: studentId, heartbeat_id: senderUserID, name: studentName }, { onConflict: 'id' });
+    } catch (_) {}
+
     // Store conversation in database (two rows: user message + assistant response)
     try {
       const { data: saveData, error: saveErr } = await supabase
