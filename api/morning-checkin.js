@@ -1,4 +1,15 @@
 const { getAllMembers, sendDirectMessage } = require('./_lib/heartbeat');
+
+async function sendSplitMessages(recipientId, response) {
+  const parts = response.split('[SPLIT]').map(p => p.trim()).filter(p => p.length > 0);
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) {
+      const delay = Math.min(600 + parts[i].length * 12, 1400);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    await sendDirectMessage(recipientId, parts[i]);
+  }
+}
 const { callOpenAI } = require('./_lib/charlie');
 const { supabase } = require('./_lib/supabase');
 
@@ -147,7 +158,7 @@ module.exports = async (req, res) => {
           continue;
         }
 
-        await sendDirectMessage(member.heartbeat_id, message);
+        await sendSplitMessages(member.heartbeat_id, message);
 
         // Update last_charlie_proactive timestamp
         await supabase
@@ -353,7 +364,8 @@ REGULI:
 - Vorbești în română (poți folosi câteva cuvinte în engleză dacă e natural)
 - NU predai engleza, NU răspunzi la întrebări de gramatică
 - Ești un mentor care verifică, încurajează și motivează — nu un profesor
-- Mesajele tale sunt scurte: 2-3 propoziții MAXIM
+- Mesajele tale sunt scurte și naturale — ca un DM de la un prieten, nu un email
+- Poți folosi [SPLIT] pentru a trimite 2-3 mesaje separate (fiecare de 1-2 propoziții) în loc de un bloc de text
 - Fii specific și personal, nu generic`
       },
       {

@@ -5,6 +5,22 @@ const { supabase } = require('./_lib/supabase');
 const CHARLIE_USER_ID = '4123ccdd-a337-4438-b5ff-fcaad1464102';
 
 /**
+ * Send a response as multiple natural DM messages, split on [SPLIT] markers
+ * Adds realistic typing delays between messages
+ */
+async function sendSplitMessages(recipientId, response) {
+  const parts = response.split('[SPLIT]').map(p => p.trim()).filter(p => p.length > 0);
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) {
+      // Delay between messages: roughly proportional to message length, 600-1400ms
+      const delay = Math.min(600 + parts[i].length * 12, 1400);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    await sendDirectMessage(recipientId, parts[i]);
+  }
+}
+
+/**
  * Handle incoming Heartbeat webhook events
  */
 module.exports = async (req, res) => {
@@ -161,8 +177,8 @@ async function handleDirectMessage(event, res) {
     // Get Charlie's response
     const response = await callOpenAI(messages);
 
-    // Send response back to student
-    await sendDirectMessage(senderUserID, response);
+    // Send response back to student (split into natural conversational messages)
+    await sendSplitMessages(senderUserID, response);
 
     // Store conversation in database
     try {
@@ -213,21 +229,18 @@ async function handleUserJoin(event, res) {
 
     console.log(`[USER_JOIN] ${userName} (${userId}) joined`);
 
-    // Build warm welcome message
-    const welcomeMsg = `Bună ziua, ${userName}! 👋
-
-Eu sunt **Charlie**, mentorul tău personal de engleză în această comunitate.
-
-Sunt aici pentru tine pe tot parcursul călătoriei tale de învățare - să te ghidez, să te motivez, și să celebrăm împreună progresul tău. Nu voi preda lecțiile (pentru asta ai cursurile noastre superbe!), dar sunt mereu disponibil pentru:
-
-✅ Sfaturi despre ce să studiezi și în ce ordine
-✅ Motivație când simți că e greu
-✅ Ghidare când nu știi cum să continuați
-✅ Celebrarea succeselor tale
-
-Scrie-mi oricând - sunt chiar aici în mesagerie. Hai să facem treabă bună împreună! 🚀`;
-
-    await sendDirectMessage(userId, welcomeMsg);
+    // Generate warm welcome message via AI
+    const welcomeMsgs = await callOpenAI([
+      {
+        role: 'system',
+        content: 'Ești Charlie, mentorul personal de engleză la academia Engleza Britanică. Ești cald, prietenos, ca un prieten bun. Vorbești în română. Când trimiți mai multe mesaje separate, le separi cu [SPLIT].'
+      },
+      {
+        role: 'user',
+        content: `Un student nou tocmai s-a alăturat comunității: ${userName}. Scrie un mesaj de bun venit NATURAL și SCURT — ca și cum ai bate pe umăr pe cineva nou. Prezintă-te pe scurt ca Charlie, mentorul lor. Spune că ești acolo pentru ei pe tot parcursul călătoriei — nu să predai, ci să ghideze și să sprijine. Invită-i să-ți scrie oricând. Poți folosi [SPLIT] pentru a trimite 2-3 mesaje scurte și naturale în loc de un bloc mare de text. Fii prietenos, nu formal.`
+      }
+    ]);
+    await sendSplitMessages(userId, welcomeMsgs);
 
     // Upsert student record
     try {
@@ -336,7 +349,7 @@ async function handleUserUpdate(event, res) {
         if (daysSinceProactive >= 2) {
           const welcomeBackMsg = await generateWelcomeBack(user);
           if (welcomeBackMsg) {
-            await sendDirectMessage(userId, welcomeBackMsg);
+            await sendSplitMessages(userId, welcomeBackMsg);
             await supabase
               .from('students')
               .upsert({
@@ -497,7 +510,7 @@ async function handleCourseCompleted(event, res) {
     // Generate and send congratulations message
     const congratsMsg = await generateCourseCongratsMessage(userName, courseName);
     if (congratsMsg) {
-      await sendDirectMessage(userId, congratsMsg);
+      await sendSplitMessages(userId, congratsMsg);
 
       // Update last_charlie_proactive timestamp
       await supabase
@@ -649,15 +662,17 @@ async function handleGroupJoin(event, res) {
 
     console.log(`[GROUP_JOIN] ${userName} joined "${groupName}"`);
 
-    const courseMsg = `Felicitări, ${userName}! 🎓
-
-Tocmai ai intrat în **"${groupName}"** - asta e un pas important!
-
-Sunt Charlie, mentorul tău, și voi fi alături de tine pe tot parcursul acestui curs. Dacă ai întrebări despre progres, dacă simți că e prea mult sau prea puțin, sau dacă ai nevoie de motivație - scrie-mi direct! 
-
-Mult succes! 💪`;
-
-    await sendDirectMessage(userId, courseMsg);
+    const courseMsg = await callOpenAI([
+      {
+        role: 'system',
+        content: 'Ești Charlie, mentorul personal de engleză la academia Engleza Britanică. Ești cald, entuziast, ca un prieten bun. Vorbești în română. Poți folosi [SPLIT] pentru mesaje separate.'
+      },
+      {
+        role: 'user',
+        content: `${userName} tocmai s-a înscris la cursul "${groupName}". Scrie un mesaj scurt și natural de încurajare — 2-3 propoziții max. Menționează cursul. Spune că ești acolo dacă are nevoie. Poți folosi [SPLIT] dacă vrei să trimiți 2 mesaje scurte în loc de unul. Fii sincer și cald, nu exagerat de entuziast.`
+      }
+    ]);
+    await sendSplitMessages(userId, courseMsg);
 
     console.log('[GROUP_JOIN] Message sent to', userName);
     return res.status(200).json({ handled: true, notified: true });
