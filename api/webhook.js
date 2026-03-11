@@ -130,8 +130,8 @@ async function handleDirectMessage(event, res) {
     const student = await findUser(senderUserID).catch(() => null);
     const studentId = student?.heartbeat_id || senderUserID;
 
-    // Build Charlie's context-aware system prompt
-    const systemPrompt = await buildSystemPrompt(studentId);
+    // Build Charlie's context-aware system prompt (pass full student object, fallback to empty)
+    const systemPrompt = await buildSystemPrompt(student || { heartbeat_id: studentId, groups: [], onboarding_responses: {} });
 
     // Get conversation history for continuity
     const { data: history } = await supabase
