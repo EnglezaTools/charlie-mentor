@@ -22,47 +22,66 @@ async function sendSplitMessages(recipientId, response) {
 
 /**
  * Handle incoming Heartbeat webhook events
+ * IMPORTANT: Process FIRST, then respond. Vercel kills the function after res.json().
  */
 module.exports = async (req, res) => {
   // Only accept POST
   if (req.method !== 'POST') {
-    return;
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const event = req.body;
-  console.log('[Webhook] Event received:', JSON.stringify(event).substring(0, 300));
+  console.log('[Webhook] Event received:', JSON.stringify(event).substring(0, 500));
 
-  // Return 200 immediately so Heartbeat doesn't retry/timeout
-  // Then process asynchronously in the background
-  res.status(200).json({ received: true, type: event.type });
+  // Log raw payload to Supabase for debugging
+  try {
+    await supabase.from('activity_log').insert([{
+      user_id: event.senderUserID || event.userID || event.user?.id || 'unknown',
+      event_type: 'WEBHOOK_RAW',
+      metadata: { type: event.type, payload: event }
+    }]);
+  } catch (logErr) {
+    console.warn('[Webhook] Debug log failed:', logErr.message);
+  }
 
-  // Process in background (after response is sent)
+  // Process the event BEFORE responding (Vercel kills function after response)
+  let result = 'ignored';
   try {
     switch (event.type) {
       case 'DIRECT_MESSAGE':
         await handleDirectMessage(event);
+        result = 'processed';
         break;
       case 'USER_JOIN':
         await handleUserJoin(event);
+        result = 'processed';
         break;
       case 'GROUP_JOIN':
         await handleGroupJoin(event);
+        result = 'processed';
         break;
       case 'USER_UPDATE':
         await handleUserUpdate(event);
+        result = 'processed';
         break;
       case 'THREAD_CREATE':
         await handleThreadCreate(event);
+        result = 'processed';
         break;
       case 'COURSE_COMPLETED':
         await handleCourseCompleted(event);
+        result = 'processed';
         break;
       default:
         console.log('[Webhook] Unknown event type:', event.type);
     }
   } catch (err) {
-    console.error('[Webhook] Background processing error:', err.message);
+    console.error('[Webhook] Processing error:', err.message, err.stack);
+    result = `error: ${err.message}`;
   }
+
+  // Respond AFTER processing is complete
+  return res.status(200).json({ received: true, type: event.type, result });
 };
 
 /**
