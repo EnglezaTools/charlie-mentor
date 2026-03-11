@@ -128,8 +128,12 @@ async function handleDirectMessage(event) {
     }
 
     console.log(`[DM] Message from ${senderUserID}, chatID: ${chatID}, msgID: ${chatMessageID}`);
+    
+    // Step tracking for debug
+    let step = 'INIT';
 
     // Fetch actual message content from Heartbeat API
+    step = 'FETCH_MESSAGE';
     let messageContent = '';
     try {
       const chatData = await getDirectMessages(chatID);
@@ -173,6 +177,7 @@ async function handleDirectMessage(event) {
     }
 
     // Get student profile from Heartbeat
+    step = 'GET_STUDENT';
     const student = await getUserById(senderUserID).catch(() => null);
     const studentId = student?.heartbeat_id || senderUserID;
 
@@ -221,9 +226,11 @@ async function handleDirectMessage(event) {
     }
 
     // Get Charlie's response
+    step = 'CALL_OPENAI';
     const response = await callOpenAI(messages);
 
     // Send response back to student (split into natural conversational messages)
+    step = 'SEND_REPLY';
     await sendSplitMessages(senderUserID, response);
 
     // Store conversation in database
@@ -250,7 +257,16 @@ async function handleDirectMessage(event) {
     console.log('[DM] Responded to', senderUserID);
     return;
   } catch (err) {
-    console.error('[DM] Handler error:', err.message);
+    console.error('[DM] Handler error:', err.message, err.stack);
+    // Log error to Supabase so we can actually see it
+    try {
+      await supabase.from('activity_log').insert([{
+        user_id: event?.senderUserID || 'unknown',
+        activity_type: 'DM_ERROR',
+        activity_date: new Date().toISOString().split('T')[0],
+        metadata: { step, error: err.message, stack: err.stack?.substring(0, 500) }
+      }]);
+    } catch (_) {}
     return;
   }
 }
