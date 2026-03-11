@@ -11,13 +11,57 @@ window.addEventListener('DOMContentLoaded', () => {
   studentToken = localStorage.getItem('charlie_token');
   studentName  = localStorage.getItem('charlie_name');
 
+  // Check for URL parameter (for Heartbeat embedding)
+  const urlParams = new URLSearchParams(window.location.search);
+  const emailParam = urlParams.get('email') || urlParams.get('student');
+
   if (studentToken) {
     showChat();
     loadHistory();
+  } else if (emailParam) {
+    // Auto-authenticate with URL parameter
+    autoAuthenticateWithEmail(emailParam);
   } else {
     showLogin();
   }
 });
+
+// ── Auto-Auth (for Heartbeat embedding) ────────────────────────
+
+async function autoAuthenticateWithEmail(email) {
+  const loginBtn = document.getElementById('login-btn');
+  if (loginBtn) loginBtn.disabled = true;
+
+  try {
+    const resp = await fetch(`${API}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim() })
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok || !data.found) {
+      // Auto-auth failed, show login form
+      showLogin();
+      return;
+    }
+
+    // Success
+    studentToken = data.token;
+    studentName  = data.name;
+    localStorage.setItem('charlie_token', studentToken);
+    localStorage.setItem('charlie_name', studentName);
+
+    showChat();
+    loadHistory();
+
+  } catch (err) {
+    // Auto-auth failed, show login form
+    console.error('[Auto-Auth] Error:', err);
+    showLogin();
+  }
+}
 
 // ── Screens ───────────────────────────────────────────────────
 
