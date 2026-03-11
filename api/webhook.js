@@ -198,6 +198,9 @@ async function handleDirectMessage(event, res) {
       console.warn('[DM] Could not save conversation:', dbErr.message);
     }
 
+    // Track conversation session for active window detection (non-blocking)
+    trackMessageSession(studentId).catch(() => {});
+
     console.log('[DM] Responded to', senderUserID);
     return res.status(200).json({ handled: true, responded: true });
   } catch (err) {
@@ -649,6 +652,70 @@ function buildPreferencesContext(prefs) {
   
   if (notes.length === 0) return '';
   return `IMPORTANT — the student's message contains a personal preference or instruction. ${notes.join(' ')} Make sure your response acknowledges this naturally without being robotic.`;
+}
+
+
+/**
+ * Track when a student messages — records sessions (not individual messages)
+ * A session = a conversation window; messages within 60 min of each other count as one session
+ * Stores last 20 session hours and derives active_window (morning/afternoon/evening)
+ */
+async function trackMessageSession(studentId) {
+  try {
+    const romanianNow = new Date(Date.now() + 2 * 3600 * 1000); // UTC+2 (Romanian time)
+    const currentHour = romanianNow.getHours();
+    const currentTime = Date.now();
+
+    // Fetch current preferences
+    const { data: rec } = await supabase
+      .from('students')
+      .select('preferences')
+      .eq('heartbeat_id', studentId)
+      .single();
+
+    const prefs = rec?.preferences || {};
+    const lastSessionAt = prefs._last_session_at ? new Date(prefs._last_session_at).getTime() : 0;
+    const sessionHours = Array.isArray(prefs._session_hours) ? prefs._session_hours : [];
+
+    // Same session if within 60 minutes of last recorded session — skip
+    if (currentTime - lastSessionAt < 60 * 60 * 1000) {
+      return;
+    }
+
+    // New session — add hour and keep last 20
+    const updatedHours = [...sessionHours, currentHour].slice(-20);
+
+    // Derive active_window once we have 5+ sessions
+    let activeWindow = prefs.active_window || 'morning'; // default morning
+    if (updatedHours.length >= 5) {
+      const morning   = updatedHours.filter(h => h >= 6 && h < 12).length;
+      const afternoon = updatedHours.filter(h => h >= 12 && h < 18).length;
+      const evening   = updatedHours.filter(h => h >= 18 || h < 6).length;
+      const maxCount  = Math.max(morning, afternoon, evening);
+      if (maxCount === morning) activeWindow = 'morning';
+      else if (maxCount === afternoon) activeWindow = 'afternoon';
+      else activeWindow = 'evening';
+    }
+
+    const newPrefs = {
+      ...prefs,
+      _session_hours: updatedHours,
+      _last_session_at: new Date().toISOString(),
+      active_window: activeWindow
+    };
+
+    await supabase
+      .from('students')
+      .upsert({
+        heartbeat_id: studentId,
+        student_id: studentId,
+        preferences: newPrefs
+      }, { onConflict: 'heartbeat_id' });
+
+    console.log(`[Session] New session at hour ${currentHour} RO time for ${studentId}. Window: ${activeWindow} (${updatedHours.length} sessions recorded)`);
+  } catch (err) {
+    console.warn('[trackMessageSession] Non-fatal error:', err.message);
+  }
 }
 
 /**
