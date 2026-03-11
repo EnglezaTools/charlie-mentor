@@ -36,10 +36,10 @@ module.exports = async (req, res) => {
     const members = await getAllMembers();
     console.log(`[Morning] Evaluating ${members.length} members`);
 
-    // --- Get student records from Supabase ---
+    // --- Get student records from Supabase (including preferences) ---
     const { data: studentRecords } = await supabase
       .from('students')
-      .select('heartbeat_id, current_streak, longest_streak, last_login_date, last_charlie_proactive, last_interaction');
+      .select('heartbeat_id, current_streak, longest_streak, last_login_date, last_charlie_proactive, last_interaction, preferences');
 
     const studentMap = {};
     if (studentRecords) {
@@ -86,15 +86,48 @@ module.exports = async (req, res) => {
 
       const studentData = studentMap[member.heartbeat_id] || {};
       const activityData = activityMap[member.heartbeat_id] || { posts: 0, courseCompletions: [], lastPostDate: null, lastCourseDate: null };
-      const score = calculatePriorityScore(member, studentData, activityData);
+      const prefs = studentData.preferences || {};
+
+      // --- Preference hard overrides ---
+
+      // Student said they're away → skip until they return
+      if (prefs.away_until) {
+        const awayUntil = new Date(prefs.away_until);
+        if (new Date() <= awayUntil) {
+          summary.skipped++;
+          continue;
+        }
+      }
+
+      // Student said no morning messages → skip entirely
+      if (prefs.no_morning_messages === true) {
+        summary.skipped++;
+        continue;
+      }
+
+      // Student said no weekends → skip on Saturday (6) and Sunday (0)
+      if (prefs.no_weekends === true) {
+        const romanianNow = new Date(Date.now() + 2 * 3600 * 1000);
+        const dayOfWeek = romanianNow.getUTCDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+          summary.skipped++;
+          continue;
+        }
+      }
+
+      // Student said always contact them → boost score significantly
+      const alwaysBoost = prefs.always_checkin === true ? 100 : 0;
+
+      const score = calculatePriorityScore(member, studentData, activityData) + alwaysBoost;
 
       if (score > 0) {
         scored.push({
           member,
           studentData,
           activityData,
+          prefs,
           score,
-          reason: buildReason(member, studentData, activityData)
+          reason: buildReason(member, studentData, activityData, prefs)
         });
       }
     }
@@ -106,9 +139,9 @@ module.exports = async (req, res) => {
     console.log(`[Morning] ${scored.length} students flagged, messaging top ${toMessage.length}`);
 
     // --- Generate and send messages ---
-    for (const { member, studentData, activityData, reason } of toMessage) {
+    for (const { member, studentData, activityData, prefs, reason } of toMessage) {
       try {
-        const message = await generateProactiveMessage(member, studentData, activityData, reason);
+        const message = await generateProactiveMessage(member, studentData, activityData, reason, prefs || {});
         if (!message) {
           summary.skipped++;
           continue;
@@ -237,8 +270,9 @@ function calculatePriorityScore(member, studentData, activityData = {}) {
 /**
  * Build a human-readable reason for the check-in (for logging)
  */
-function buildReason(member, studentData, activityData = {}) {
+function buildReason(member, studentData, activityData = {}, prefs = {}) {
   const reasons = [];
+  if (prefs.always_checkin) reasons.push('student requested daily check-in');
   const now = Date.now();
   const groups = (member.groups || []).join(' ').toLowerCase();
 
@@ -264,7 +298,7 @@ function buildReason(member, studentData, activityData = {}) {
 /**
  * Generate a personalised proactive message using OpenAI
  */
-async function generateProactiveMessage(member, studentData, activityData = {}, reason) {
+async function generateProactiveMessage(member, studentData, activityData = {}, reason, prefs = {}) {
   try {
     const firstName = member.first_name || member.name || 'prietene';
     const now = Date.now();
@@ -291,6 +325,13 @@ async function generateProactiveMessage(member, studentData, activityData = {}, 
       ? Object.entries(onboarding).map(([k, v]) => `${k}: ${v}`).join('; ')
       : null;
 
+    // Build preferences context for the prompt
+    const prefsLines = [];
+    if (prefs.always_checkin) prefsLines.push('- Studentul a cerut să fie contactat în fiecare dimineață');
+    if (prefs.preferred_language === 'english') prefsLines.push('- IMPORTANT: Studentul preferă să primească mesaje în ENGLEZĂ (nu română)');
+    if (prefs.focus_area) prefsLines.push(`- Zona de focus aleasă de student: ${prefs.focus_area}`);
+    if (prefs.goal) prefsLines.push(`- Obiectivul studentului: ${prefs.goal}`);
+
     const contextLines = [
       daysSinceJoined !== null ? `- Zile de la înregistrare: ${daysSinceJoined}` : null,
       currentStreak > 0 ? `- Streak curent: ${currentStreak} zile consecutive` : null,
@@ -299,6 +340,7 @@ async function generateProactiveMessage(member, studentData, activityData = {}, 
       activityData.courseCompletions?.length > 0 ? `- Cursuri finalizate recent: ${activityData.courseCompletions.join(', ')}` : null,
       groups.length > 0 ? `- Cursuri/grupuri: ${groups.slice(0, 5).join(', ')}` : null,
       onboardingText ? `- Context înregistrare: ${onboardingText}` : null,
+      prefsLines.length > 0 ? `\nPreferințele studentului:\n${prefsLines.join('\n')}` : null,
       `- Motiv check-in: ${reason}`
     ].filter(Boolean).join('\n');
 

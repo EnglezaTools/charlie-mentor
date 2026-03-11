@@ -7,13 +7,17 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
  * Call OpenAI with a messages array
+ * @param {Array} messages - The messages array
+ * @param {Object} opts - Optional overrides: { model, max_tokens, temperature, response_format }
  */
-async function callOpenAI(messages, model = 'gpt-4o-mini') {
+async function callOpenAI(messages, opts = {}) {
+  const model = opts.model || 'gpt-4o-mini';
   const completion = await openai.chat.completions.create({
     model,
     messages,
-    max_tokens: 500,
-    temperature: 0.8
+    max_tokens: opts.max_tokens || 500,
+    temperature: opts.temperature !== undefined ? opts.temperature : 0.8,
+    ...(opts.response_format ? { response_format: opts.response_format } : {})
   });
   return completion.choices[0].message.content;
 }

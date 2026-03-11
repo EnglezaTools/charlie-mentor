@@ -140,6 +140,24 @@ async function handleDirectMessage(event, res) {
     // Add current message
     messages.push({ role: 'user', content: messageContent });
 
+    // Detect and save any preferences expressed in the student's message (non-blocking)
+    let detectedPrefs = null;
+    try {
+      detectedPrefs = await detectPreferences(messageContent);
+      if (detectedPrefs) {
+        await savePreferences(studentId, detectedPrefs);
+        console.log(`[DM] Preferences detected and saved for ${studentId}:`, JSON.stringify(detectedPrefs));
+      }
+    } catch (prefErr) {
+      console.warn('[DM] Preference detection failed (non-fatal):', prefErr.message);
+    }
+
+    // If preferences were detected, add context so Charlie can acknowledge them naturally
+    if (detectedPrefs) {
+      const prefsContext = buildPreferencesContext(detectedPrefs);
+      messages[0].content += `\n\n${prefsContext}`;
+    }
+
     // Get Charlie's response
     const response = await callOpenAI(messages);
 
@@ -526,6 +544,98 @@ async function generateCourseCongratsMessage(firstName, courseName) {
     console.warn('[generateCourseCongratsMessage] Error:', err.message);
     return null;
   }
+}
+
+/**
+ * Detect student preferences from their message using AI
+ * Returns null if no preferences found, otherwise returns a preferences object
+ */
+async function detectPreferences(messageText) {
+  const detectionMessages = [
+    {
+      role: 'system',
+      content: `You are a preference extractor. Analyze the student's message and extract any explicit preferences or instructions they are giving about how they want to be contacted or mentored. 
+      
+Return a JSON object with ONLY the preferences that are explicitly stated. Use null for preferences not mentioned.
+
+Valid fields:
+- always_checkin: true (they want daily morning messages) / false (they don't want proactive messages)
+- no_weekends: true (don't contact on weekends)
+- away_until: "YYYY-MM-DD" (they'll be away until this date) / null
+- preferred_language: "english" or "romanian" (their preferred language for Charlie's messages)
+- focus_area: one of "pronunciation", "vocabulary", "grammar", "speaking", "listening", "reading" 
+- goal: string (their stated learning goal e.g. "IELTS by June", "job interview in March")
+- no_morning_messages: true (they explicitly don't want morning messages)
+
+IMPORTANT: Only extract what is EXPLICITLY stated. Do not infer. If the message contains no preferences, return {"has_preferences": false}.
+If preferences found, return {"has_preferences": true, "preferences": {...}}
+
+Examples:
+- "Scrie-mi în fiecare dimineață" → {"has_preferences": true, "preferences": {"always_checkin": true}}
+- "Sunt în vacanță 2 săptămâni" (today is 2026-03-11) → {"has_preferences": true, "preferences": {"away_until": "2026-03-25"}}
+- "Nu mă deranja în weekend" → {"has_preferences": true, "preferences": {"no_weekends": true}}
+- "Vreau să mă concentrez pe pronunție" → {"has_preferences": true, "preferences": {"focus_area": "pronunciation"}}
+- "Scrie-mi în engleză" → {"has_preferences": true, "preferences": {"preferred_language": "english"}}
+- "Obiectivul meu e IELTS în iunie" → {"has_preferences": true, "preferences": {"goal": "IELTS in June"}}
+- "Nu mai trimite mesaje dimineața" → {"has_preferences": true, "preferences": {"no_morning_messages": true}}
+- "Cum merg lecțiile?" → {"has_preferences": false}`
+    },
+    {
+      role: 'user',
+      content: `Today's date: ${new Date().toISOString().split('T')[0]}\n\nStudent message: "${messageText}"\n\nExtract preferences as JSON:`
+    }
+  ];
+
+  const result = await callOpenAI(detectionMessages, { response_format: { type: 'json_object' }, max_tokens: 300 });
+  
+  try {
+    const parsed = JSON.parse(result);
+    if (!parsed.has_preferences) return null;
+    return parsed.preferences || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Merge new preferences with existing ones and save to students table
+ */
+async function savePreferences(studentId, newPrefs) {
+  // Get current preferences
+  const { data: current } = await supabase
+    .from('students')
+    .select('preferences')
+    .eq('heartbeat_id', studentId)
+    .single();
+
+  const existingPrefs = current?.preferences || {};
+  const mergedPrefs = { ...existingPrefs, ...newPrefs, last_updated: new Date().toISOString() };
+
+  await supabase
+    .from('students')
+    .upsert({
+      heartbeat_id: studentId,
+      student_id: studentId,
+      preferences: mergedPrefs
+    }, { onConflict: 'heartbeat_id' });
+}
+
+/**
+ * Build a context note for Charlie to acknowledge detected preferences naturally
+ */
+function buildPreferencesContext(prefs) {
+  const notes = [];
+  if (prefs.always_checkin === true) notes.push('The student just asked you to message them every morning. Acknowledge this warmly and confirm you will.');
+  if (prefs.no_morning_messages === true) notes.push('The student just asked you NOT to send morning messages. Acknowledge this and confirm you understand.');
+  if (prefs.no_weekends === true) notes.push('The student asked you not to contact them on weekends. Acknowledge this.');
+  if (prefs.away_until) notes.push(`The student mentioned they will be away until ${prefs.away_until}. Acknowledge this warmly and say you will be here when they return.`);
+  if (prefs.preferred_language === 'english') notes.push('The student just asked you to write to them in English. Switch to English for your response.');
+  if (prefs.preferred_language === 'romanian') notes.push('The student just asked you to write in Romanian. Confirm you will.');
+  if (prefs.focus_area) notes.push(`The student wants to focus on ${prefs.focus_area}. Acknowledge this and briefly affirm it is a great focus area.`);
+  if (prefs.goal) notes.push(`The student shared their goal: "${prefs.goal}". Acknowledge this goal warmly.`);
+  
+  if (notes.length === 0) return '';
+  return `IMPORTANT — the student's message contains a personal preference or instruction. ${notes.join(' ')} Make sure your response acknowledges this naturally without being robotic.`;
 }
 
 /**

@@ -44,6 +44,9 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_type_date
 -- 5. Disable RLS on activity_log
 ALTER TABLE activity_log DISABLE ROW LEVEL SECURITY;
 
+-- Add preferences column to students table (stores student's personal instructions to Charlie)
+ALTER TABLE students ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}';
+
 -- Verify
 SELECT 'daily_logins' AS table_name, COUNT(*) AS rows FROM daily_logins
 UNION ALL
