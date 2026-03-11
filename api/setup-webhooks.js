@@ -26,10 +26,8 @@ module.exports = async (req, res) => {
  * Create all 3 webhooks
  */
 async function setupWebhooks(req, res) {
-  const vercelUrl = process.env.VERCEL_URL 
-    ? `https://${process.env.VERCEL_URL}`
-    : 'https://charlie-mentor.vercel.app';
-  const webhookUrl = `${vercelUrl}/api/webhook`;
+  // Hardcoded webhook URL - update this if you deploy to a different domain
+  const webhookUrl = 'https://charlie-mentor.vercel.app/api/webhook';
   const CHARLIE_USER_ID = '4123ccdd-a337-4438-b5ff-fcaad1464102';
 
   console.log('[Setup] Creating webhooks pointing to:', webhookUrl);
