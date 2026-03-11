@@ -1,4 +1,4 @@
-const { sendDirectMessage, getDirectMessages, findUser, getUserById } = require('./_lib/heartbeat');
+const { sendDirectMessage, getDirectMessages, getUserById } = require('./_lib/heartbeat');
 const { callOpenAI, buildSystemPrompt } = require('./_lib/charlie');
 const { supabase } = require('./_lib/supabase');
 
@@ -26,59 +26,60 @@ async function sendSplitMessages(recipientId, response) {
 module.exports = async (req, res) => {
   // Only accept POST
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return;
   }
 
-  try {
-    const event = req.body;
-    
-    console.log('[Webhook] Event received:', JSON.stringify(event).substring(0, 300));
+  const event = req.body;
+  console.log('[Webhook] Event received:', JSON.stringify(event).substring(0, 300));
 
-    // Handle different event types
+  // Return 200 immediately so Heartbeat doesn't retry/timeout
+  // Then process asynchronously in the background
+  res.status(200).json({ received: true, type: event.type });
+
+  // Process in background (after response is sent)
+  try {
     switch (event.type) {
       case 'DIRECT_MESSAGE':
-        return await handleDirectMessage(event, res);
-      
+        await handleDirectMessage(event);
+        break;
       case 'USER_JOIN':
-        return await handleUserJoin(event, res);
-      
+        await handleUserJoin(event);
+        break;
       case 'GROUP_JOIN':
-        return await handleGroupJoin(event, res);
-
+        await handleGroupJoin(event);
+        break;
       case 'USER_UPDATE':
-        return await handleUserUpdate(event, res);
-
+        await handleUserUpdate(event);
+        break;
       case 'THREAD_CREATE':
-        return await handleThreadCreate(event, res);
-
+        await handleThreadCreate(event);
+        break;
       case 'COURSE_COMPLETED':
-        return await handleCourseCompleted(event, res);
-      
+        await handleCourseCompleted(event);
+        break;
       default:
         console.log('[Webhook] Unknown event type:', event.type);
-        return res.status(200).json({ handled: false, type: event.type });
     }
   } catch (err) {
-    console.error('[Webhook] Error:', err.message);
-    return res.status(500).json({ error: err.message });
+    console.error('[Webhook] Background processing error:', err.message);
   }
 };
 
 /**
  * When a student DMs Charlie
  */
-async function handleDirectMessage(event, res) {
+async function handleDirectMessage(event) {
   try {
     const { senderUserID, receiverUserID, chatID, chatMessageID } = event;
 
     // Don't respond to our own messages
     if (senderUserID === CHARLIE_USER_ID) {
-      return res.status(200).json({ handled: true, skipped: 'own_message' });
+      return;
     }
 
     // Only handle messages sent TO Charlie
     if (receiverUserID && receiverUserID !== CHARLIE_USER_ID) {
-      return res.status(200).json({ handled: true, skipped: 'not_for_charlie' });
+      return;
     }
 
     console.log(`[DM] Message from ${senderUserID}, chatID: ${chatID}, msgID: ${chatMessageID}`);
@@ -127,7 +128,7 @@ async function handleDirectMessage(event, res) {
     }
 
     // Get student profile from Heartbeat
-    const student = await findUser(senderUserID).catch(() => null);
+    const student = await getUserById(senderUserID).catch(() => null);
     const studentId = student?.heartbeat_id || senderUserID;
 
     // Build Charlie's context-aware system prompt (pass full student object, fallback to empty)
@@ -202,10 +203,10 @@ async function handleDirectMessage(event, res) {
     trackMessageSession(studentId).catch(() => {});
 
     console.log('[DM] Responded to', senderUserID);
-    return res.status(200).json({ handled: true, responded: true });
+    return;
   } catch (err) {
     console.error('[DM] Handler error:', err.message);
-    return res.status(500).json({ error: err.message });
+    return;
   }
 }
 
@@ -223,7 +224,7 @@ function extractText(msg) {
 /**
  * When a new student joins the community
  */
-async function handleUserJoin(event, res) {
+async function handleUserJoin(event) {
   try {
     // Heartbeat USER_JOIN event - check various field names
     const userId = event.userID || event.user_id || event.id;
@@ -261,10 +262,10 @@ async function handleUserJoin(event, res) {
     }
 
     console.log('[USER_JOIN] Welcome sent to', userName);
-    return res.status(200).json({ handled: true, welcomed: true });
+    return;
   } catch (err) {
     console.error('[USER_JOIN] Handler error:', err.message);
-    return res.status(500).json({ error: err.message });
+    return;
   }
 }
 
@@ -272,16 +273,16 @@ async function handleUserJoin(event, res) {
  * When a user's profile or groups are updated — used to capture logins
  * Heartbeat fires this when the "Log-in" or "Active" group is assigned
  */
-async function handleUserUpdate(event, res) {
+async function handleUserUpdate(event) {
   try {
     const userId = event.id || event.userID || event.user_id;
     if (!userId) {
-      return res.status(200).json({ handled: true, skipped: 'no_user_id' });
+      return;
     }
 
     // Skip Charlie's own account
     if (userId === CHARLIE_USER_ID) {
-      return res.status(200).json({ handled: true, skipped: 'charlie_account' });
+      return;
     }
 
     console.log(`[USER_UPDATE] Checking user ${userId}`);
@@ -290,12 +291,12 @@ async function handleUserUpdate(event, res) {
     const user = await getUserById(userId);
     if (!user) {
       console.log(`[USER_UPDATE] Could not find user ${userId}`);
-      return res.status(200).json({ handled: true, skipped: 'user_not_found' });
+      return;
     }
 
     // Skip admins
     if (user.is_admin) {
-      return res.status(200).json({ handled: true, skipped: 'admin' });
+      return;
     }
 
     const groups = user.groups || [];
@@ -303,7 +304,7 @@ async function handleUserUpdate(event, res) {
     const hasLoginSignal = groupStr.includes('log-in') || groupStr.includes('login') || groupStr.includes('active');
 
     if (!hasLoginSignal) {
-      return res.status(200).json({ handled: true, skipped: 'no_login_signal' });
+      return;
     }
 
     // Record login for today (Romanian time, UTC+2)
@@ -370,10 +371,10 @@ async function handleUserUpdate(event, res) {
       console.warn('[USER_UPDATE] Welcome-back check failed:', wbErr.message);
     }
 
-    return res.status(200).json({ handled: true, login_recorded: true, date: loginDate });
+    return;
   } catch (err) {
     console.error('[USER_UPDATE] Handler error:', err.message);
-    return res.status(500).json({ error: err.message });
+    return;
   }
 }
 
@@ -414,13 +415,13 @@ Mesajul trebuie să fie:
  * Payload: { id: threadID, channelID }
  * Note: no userID in payload — we fetch thread details to get the author
  */
-async function handleThreadCreate(event, res) {
+async function handleThreadCreate(event) {
   try {
     const threadId = event.id;
     const channelId = event.channelID || event.channelId;
 
     if (!threadId) {
-      return res.status(200).json({ handled: true, skipped: 'no_thread_id' });
+      return;
     }
 
     console.log(`[THREAD_CREATE] Thread ${threadId} in channel ${channelId}`);
@@ -439,12 +440,12 @@ async function handleThreadCreate(event, res) {
 
     if (!userId) {
       console.log('[THREAD_CREATE] Could not determine author — recording without user_id');
-      return res.status(200).json({ handled: true, recorded: false, reason: 'no_user_id' });
+      return;
     }
 
     // Skip Charlie's own posts
     if (userId === CHARLIE_USER_ID) {
-      return res.status(200).json({ handled: true, skipped: 'charlie_account' });
+      return;
     }
 
     // Record activity in activity_log
@@ -461,10 +462,10 @@ async function handleThreadCreate(event, res) {
       }]);
 
     console.log(`[THREAD_CREATE] ✓ Recorded POST activity for user ${userId} in ${channelName}`);
-    return res.status(200).json({ handled: true, recorded: true, user_id: userId });
+    return;
   } catch (err) {
     console.error('[THREAD_CREATE] Handler error:', err.message);
-    return res.status(500).json({ error: err.message });
+    return;
   }
 }
 
@@ -472,19 +473,19 @@ async function handleThreadCreate(event, res) {
  * When a student completes a course
  * Payload: { courseID, courseName, userID }
  */
-async function handleCourseCompleted(event, res) {
+async function handleCourseCompleted(event) {
   try {
     const userId = event.userID || event.user_id;
     const courseId = event.courseID || event.course_id;
     const courseName = event.courseName || event.course_name || 'un curs';
 
     if (!userId) {
-      return res.status(200).json({ handled: true, skipped: 'no_user_id' });
+      return;
     }
 
     // Skip Charlie's own account
     if (userId === CHARLIE_USER_ID) {
-      return res.status(200).json({ handled: true, skipped: 'charlie_account' });
+      return;
     }
 
     console.log(`[COURSE_COMPLETED] User ${userId} completed "${courseName}"`);
@@ -527,10 +528,10 @@ async function handleCourseCompleted(event, res) {
       console.log(`[COURSE_COMPLETED] ✓ Congratulations sent to ${userName} for "${courseName}"`);
     }
 
-    return res.status(200).json({ handled: true, recorded: true, congratulated: !!congratsMsg });
+    return;
   } catch (err) {
     console.error('[COURSE_COMPLETED] Handler error:', err.message);
-    return res.status(500).json({ error: err.message });
+    return;
   }
 }
 
@@ -721,7 +722,7 @@ async function trackMessageSession(studentId) {
 /**
  * When a student joins a course
  */
-async function handleGroupJoin(event, res) {
+async function handleGroupJoin(event) {
   try {
     const userId = event.userID || event.user_id;
     const userName = event.fullName || event.name || event.user_name || 'student';
@@ -742,9 +743,9 @@ async function handleGroupJoin(event, res) {
     await sendSplitMessages(userId, courseMsg);
 
     console.log('[GROUP_JOIN] Message sent to', userName);
-    return res.status(200).json({ handled: true, notified: true });
+    return;
   } catch (err) {
     console.error('[GROUP_JOIN] Handler error:', err.message);
-    return res.status(500).json({ error: err.message });
+    return;
   }
 }
