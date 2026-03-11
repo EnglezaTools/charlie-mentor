@@ -236,14 +236,32 @@ async function handleDirectMessage(event) {
 
     // Store conversation in database (two rows: user message + assistant response)
     try {
-      await supabase
+      const { data: saveData, error: saveErr } = await supabase
         .from('conversations')
         .insert([
           { student_id: studentId, role: 'user', content: messageContent },
           { student_id: studentId, role: 'assistant', content: response }
         ]);
+      
+      // Log save result to activity_log so we can debug
+      await supabase.from('activity_log').insert([{
+        user_id: senderUserID,
+        activity_type: saveErr ? 'CONV_SAVE_ERROR' : 'CONV_SAVED',
+        activity_date: new Date().toISOString().split('T')[0],
+        metadata: saveErr 
+          ? { error: saveErr.message, code: saveErr.code, studentId }
+          : { studentId, messagePreview: messageContent.substring(0, 100), responsePreview: response.substring(0, 100) }
+      }]);
     } catch (dbErr) {
-      console.warn('[DM] Could not save conversation:', dbErr.message);
+      // Even the logging failed - try one more time
+      try {
+        await supabase.from('activity_log').insert([{
+          user_id: senderUserID,
+          activity_type: 'CONV_SAVE_CRASH',
+          activity_date: new Date().toISOString().split('T')[0],
+          metadata: { error: dbErr.message }
+        }]);
+      } catch (_) {}
     }
 
     // Track conversation session for active window detection (non-blocking)
