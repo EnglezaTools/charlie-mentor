@@ -150,4 +150,99 @@ async function syncAll() {
   return results;
 }
 
-module.exports = { findUser, syncAll };
+/**
+ * Send a direct message to a user
+ */
+async function sendDirectMessage(recipientId, message) {
+  try {
+    const resp = await fetch(`${HEARTBEAT_BASE}/direct-messages`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        recipient_id: recipientId,
+        content: message
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${err}`);
+    }
+
+    return await resp.json();
+  } catch (err) {
+    console.error('[Heartbeat] Send DM failed:', err.message);
+    throw err;
+  }
+}
+
+/**
+ * Create a webhook
+ */
+async function createWebhook(event, url) {
+  try {
+    const resp = await fetch(`${HEARTBEAT_BASE}/webhooks`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        event,
+        url
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${err}`);
+    }
+
+    return await resp.json();
+  } catch (err) {
+    console.error(`[Heartbeat] Create webhook ${event} failed:`, err.message);
+    throw err;
+  }
+}
+
+/**
+ * List all webhooks
+ */
+async function listWebhooks() {
+  try {
+    const resp = await fetch(`${HEARTBEAT_BASE}/webhooks`, {
+      headers: headers()
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${err}`);
+    }
+
+    return await resp.json();
+  } catch (err) {
+    console.error('[Heartbeat] List webhooks failed:', err.message);
+    throw err;
+  }
+}
+
+/**
+ * Delete a webhook
+ */
+async function deleteWebhook(webhookId) {
+  try {
+    const resp = await fetch(`${HEARTBEAT_BASE}/webhooks/${webhookId}`, {
+      method: 'DELETE',
+      headers: headers()
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${err}`);
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[Heartbeat] Delete webhook failed:', err.message);
+    throw err;
+  }
+}
+
+module.exports = { findUser, syncAll, sendDirectMessage, createWebhook, listWebhooks, deleteWebhook };
