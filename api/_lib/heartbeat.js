@@ -181,7 +181,7 @@ async function sendDirectMessage(recipientId, message) {
       headers: headers(),
       body: JSON.stringify({
         to: recipientId,
-        text: message
+        text: message.startsWith('<') ? message : `<p>${message.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>`
       })
     });
 
