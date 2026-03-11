@@ -187,10 +187,10 @@ async function handleDirectMessage(event) {
     // Get conversation history for continuity
     const { data: history } = await supabase
       .from('conversations')
-      .select('user_message, charlie_response')
+      .select('role, content')
       .eq('student_id', studentId)
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(10);
 
     // Build messages array for OpenAI
     const messages = [{ role: 'system', content: systemPrompt }];
@@ -199,8 +199,9 @@ async function handleDirectMessage(event) {
     if (history && history.length > 0) {
       const recentHistory = history.reverse();
       for (const h of recentHistory) {
-        messages.push({ role: 'user', content: h.user_message });
-        messages.push({ role: 'assistant', content: h.charlie_response });
+        if (h.role && h.content) {
+          messages.push({ role: h.role, content: h.content });
+        }
       }
     }
     
@@ -233,20 +234,14 @@ async function handleDirectMessage(event) {
     step = 'SEND_REPLY';
     await sendSplitMessages(senderUserID, response);
 
-    // Store conversation in database
+    // Store conversation in database (two rows: user message + assistant response)
     try {
       await supabase
         .from('conversations')
-        .insert([{
-          student_id: studentId,
-          user_message: messageContent,
-          charlie_response: response,
-          context: JSON.stringify({ 
-            event_type: 'DIRECT_MESSAGE', 
-            chatID,
-            chatMessageID 
-          })
-        }]);
+        .insert([
+          { student_id: studentId, role: 'user', content: messageContent },
+          { student_id: studentId, role: 'assistant', content: response }
+        ]);
     } catch (dbErr) {
       console.warn('[DM] Could not save conversation:', dbErr.message);
     }
