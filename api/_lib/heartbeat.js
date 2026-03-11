@@ -155,12 +155,12 @@ async function syncAll() {
  */
 async function sendDirectMessage(recipientId, message) {
   try {
-    const resp = await fetch(`${HEARTBEAT_BASE}/direct-messages`, {
-      method: 'POST',
+    const resp = await fetch(`${HEARTBEAT_BASE}/directMessages`, {
+      method: 'PUT',
       headers: headers(),
       body: JSON.stringify({
-        recipient_id: recipientId,
-        content: message
+        to: recipientId,
+        text: message
       })
     });
 
@@ -179,15 +179,24 @@ async function sendDirectMessage(recipientId, message) {
 /**
  * Create a webhook
  */
-async function createWebhook(event, url) {
+async function createWebhook(webhookName, url, filter = null) {
   try {
+    const body = {
+      action: {
+        name: webhookName
+      },
+      url
+    };
+
+    // Add filter if provided
+    if (filter) {
+      body.action.filter = filter;
+    }
+
     const resp = await fetch(`${HEARTBEAT_BASE}/webhooks`, {
-      method: 'POST',
+      method: 'PUT',
       headers: headers(),
-      body: JSON.stringify({
-        event,
-        url
-      })
+      body: JSON.stringify(body)
     });
 
     if (!resp.ok) {
@@ -197,7 +206,7 @@ async function createWebhook(event, url) {
 
     return await resp.json();
   } catch (err) {
-    console.error(`[Heartbeat] Create webhook ${event} failed:`, err.message);
+    console.error(`[Heartbeat] Create webhook ${webhookName} failed:`, err.message);
     throw err;
   }
 }

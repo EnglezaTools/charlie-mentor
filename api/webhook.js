@@ -45,42 +45,49 @@ module.exports = async (req, res) => {
  */
 async function handleDirectMessage(event, res) {
   try {
-    const { sender_id, sender_name, content } = event;
+    const { senderUserID, chatMessageID } = event;
 
     // Don't respond to our own messages
-    if (sender_id === CHARLIE_USER_ID) {
+    if (senderUserID === CHARLIE_USER_ID) {
       return res.status(200).json({ handled: true, skipped: true });
     }
 
-    console.log(`[DM] Message from ${sender_name}: "${content}"`);
+    console.log(`[DM] Message received: ${chatMessageID} from ${senderUserID}`);
 
-    // Get student profile from cache/API
-    const student = await findUser(event.sender_email || sender_name);
-    const studentId = student?.heartbeat_id || sender_id;
+    // TODO: Get message content from Heartbeat API
+    // For now, we'll need to fetch the actual message content
+    // Heartbeat webhook only sends IDs, not the message text
+    
+    // Get student profile
+    const student = await findUser(senderUserID);
+    const studentId = student?.heartbeat_id || senderUserID;
 
     // Build context
     const systemPrompt = await buildSystemPrompt(studentId);
     
+    // TODO: Fetch message content from Heartbeat API using chatID/chatMessageID
+    const messageContent = "Thank you for reaching out!"; // Placeholder
+    
     // Get Charlie's response
     const response = await callOpenAI([
       { role: 'system', content: systemPrompt },
-      { role: 'user', content }
+      { role: 'user', content: messageContent }
     ]);
 
-    // Send response back to student
-    await sendDirectMessage(sender_id, response);
+    // Send response back to student via Heartbeat API
+    await sendDirectMessage(senderUserID, response);
 
     // Store conversation
     await supabase
       .from('conversations')
       .insert([{
         student_id: studentId,
-        user_message: content,
+        user_message: messageContent,
         charlie_response: response,
-        context: JSON.stringify({ event_type: 'DIRECT_MESSAGE' })
+        context: JSON.stringify({ event_type: 'DIRECT_MESSAGE', chatMessageID })
       }]);
 
-    console.log('[DM] Responded to', sender_name);
+    console.log('[DM] Responded to', senderUserID);
     return res.status(200).json({ handled: true, responded: true });
   } catch (err) {
     console.error('[DM] Handler error:', err.message);

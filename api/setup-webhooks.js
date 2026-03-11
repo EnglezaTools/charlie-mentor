@@ -27,13 +27,23 @@ module.exports = async (req, res) => {
  */
 async function setupWebhooks(req, res) {
   const webhookUrl = `${process.env.VERCEL_URL || 'https://charlie-mentor.vercel.app'}/api/webhook`;
+  const CHARLIE_USER_ID = '4123ccdd-a337-4438-b5ff-fcaad1464102';
 
   console.log('[Setup] Creating webhooks pointing to:', webhookUrl);
 
-  const events = [
-    'DIRECT_MESSAGE',
-    'USER_JOIN',
-    'GROUP_JOIN'
+  const webhooks = [
+    {
+      name: 'DIRECT_MESSAGE',
+      filter: { userID: CHARLIE_USER_ID }
+    },
+    {
+      name: 'USER_JOIN',
+      filter: null
+    },
+    {
+      name: 'GROUP_JOIN',
+      filter: null
+    }
   ];
 
   const results = {
@@ -41,14 +51,14 @@ async function setupWebhooks(req, res) {
     failed: []
   };
 
-  for (const event of events) {
+  for (const webhook of webhooks) {
     try {
-      const result = await createWebhook(event, webhookUrl);
-      results.created.push({ event, ...result });
-      console.log(`[Setup] ✓ Created ${event} webhook`);
+      const result = await createWebhook(webhook.name, webhookUrl, webhook.filter);
+      results.created.push({ name: webhook.name, ...result });
+      console.log(`[Setup] ✓ Created ${webhook.name} webhook`);
     } catch (err) {
-      results.failed.push({ event, error: err.message });
-      console.error(`[Setup] ✗ Failed to create ${event}:`, err.message);
+      results.failed.push({ name: webhook.name, error: err.message });
+      console.error(`[Setup] ✗ Failed to create ${webhook.name}:`, err.message);
     }
   }
 
