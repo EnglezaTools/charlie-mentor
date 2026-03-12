@@ -675,7 +675,6 @@ async function generateCourseCongratsMessage(firstName, courseName) {
 async function findRelevantLessons(message, supabase) {
   if (!message || message.length < 10) return [];
 
-  // Fetch all lesson_index entries (cached lookup - only ~254 rows)
   const { data: lessons, error } = await supabase
     .from('lesson_index')
     .select('lesson_id, lesson_name, lesson_url, type, week, lesson_number, learning_points')
@@ -685,44 +684,83 @@ async function findRelevantLessons(message, supabase) {
 
   const msgLower = message.toLowerCase();
 
-  // Score each lesson by keyword matches in learning_points and lesson_name
+  const STOP_WORDS = new Set([
+    'about','lessons','lesson','any','have','what','tell','with','that','this',
+    'from','they','them','their','there','when','where','which','would','could',
+    'should','does','been','were','will','more','some','also','into','than',
+    'then','just','know','take','make','want','need','like','good','well',
+    'think','help','care','used','said','each','these','those','such','here',
+    'even','much','same','back','only','most','other','come','over','your',
+    'ours','mine','year','work','part','best','long','ways','many','folosesc',
+    'poate','pentru','este','sunt','care','unde','cand','daca','cum','vreau',
+    'stiu','vrei','avem','asta','acum','deci','deja','dupa','inainte','invatare'
+  ]);
+
+  const TOPIC_KEYWORDS = new Set([
+    'modal','tense','perfect','passive','conditional','subjunctive',
+    'article','preposition','phrasal','collocation','intonation','stress',
+    'contraction','gerund','infinitive','participle','reported','indirect',
+    'pronunciation','vocabulary','grammar','spelling','idiom','adverb',
+    'adjective','determiner','quantifier','relative','clause','conjunction',
+    'present','future','continuous','simple','irregular','irregular'
+  ]);
+
+  const msgWords = msgLower
+    .split(/[\s,.?!;:()\/]+/)
+    .filter(w => w.length > 3 && !STOP_WORDS.has(w));
+
+  if (msgWords.length === 0) return [];
+
+  // Build query phrases (pairs of consecutive topic words)
+  const phrases = [];
+  for (let i = 0; i < msgWords.length - 1; i++) {
+    phrases.push(msgWords[i] + ' ' + msgWords[i+1]);
+  }
+
   const scored = lessons.map(lesson => {
-    let score = 0;
-    const name = (lesson.lesson_name || '').toLowerCase();
-
-    // Check lesson name
-    const msgWords = msgLower.split(/\s+/).filter(w => w.length > 3);
-    for (const word of msgWords) {
-      if (name.includes(word)) score += 2;
-    }
-
-    // Check learning points (handle both string and object format)
-    const points = lesson.learning_points || [];
-    const pointsText = points.map(p => {
+    // Score by DENSITY: how many individual learning points match
+    const points = (lesson.learning_points || []).map(p => {
       if (typeof p === 'string') return p.toLowerCase();
       if (typeof p === 'object') return `${p.point || ''} ${p.details || ''}`.toLowerCase();
       return '';
-    }).join(' ');
+    });
 
-    for (const word of msgWords) {
-      if (pointsText.includes(word)) score += 1;
+    let totalScore = 0;
+    let matchingPoints = 0;
+
+    for (const pt of points) {
+      let ptScore = 0;
+
+      for (const word of msgWords) {
+        if (TOPIC_KEYWORDS.has(word) && pt.includes(word)) {
+          ptScore += 4; // Topic keyword found in this specific point
+        } else if (pt.includes(word)) {
+          ptScore += 0.5; // Generic match
+        }
+      }
+      // Phrase match within a single point (highest quality signal)
+      for (const phrase of phrases) {
+        if (pt.includes(phrase)) ptScore += 6;
+      }
+
+      if (ptScore > 0) matchingPoints++;
+      totalScore += ptScore;
     }
 
-    // Extra boost for English grammar/language concept keywords
-    const englishKeywords = ['grammar', 'pronunciation', 'vocabulary', 'verb', 'tense', 'article', 
-      'preposition', 'adjective', 'adverb', 'noun', 'present', 'past', 'future', 'perfect',
-      'modal', 'conditional', 'passive', 'question', 'negative', 'contraction', 'stress',
-      'intonation', 'spelling', 'idiom', 'phrasal', 'collocation'];
-    for (const kw of englishKeywords) {
-      if (msgLower.includes(kw) && pointsText.includes(kw)) score += 3;
-    }
+    // Bonus: prefer lessons where multiple points match (it's a dedicated lesson on this topic)
+    if (matchingPoints >= 2) totalScore += matchingPoints * 2;
+    // Bonus: lessons with a week number are structured course lessons
+    if (lesson.week) totalScore += 1;
 
-    return { ...lesson, score };
+    return { ...lesson, score: Math.round(totalScore) };
   });
 
-  // Return top 3 relevant lessons (score > 0)
+  // Minimum score: require at least one topic keyword match
+  const hasTopic = msgWords.some(w => TOPIC_KEYWORDS.has(w));
+  const minScore = hasTopic ? 6 : 4;
+
   return scored
-    .filter(l => l.score > 0)
+    .filter(l => l.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
 }
