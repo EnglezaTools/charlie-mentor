@@ -734,18 +734,31 @@ function buildLessonContext(lessons) {
   if (!lessons || lessons.length === 0) return '';
 
   const lines = lessons.map(lesson => {
-    const points = (lesson.learning_points || []).slice(0, 3).map(p => {
-      if (typeof p === 'string') return `- ${p}`;
-      if (typeof p === 'object') return `- ${p.point}: ${p.details || ''}`;
-      return '';
-    }).filter(Boolean).join('\n');
-
-    const label = lesson.lesson_name || `${lesson.type} ${lesson.lesson_number || ''}`;
     const url = lesson.lesson_url || '';
-    return `📚 ${label}${url ? ` → <a href="${url}">deschide lecția</a>` : ''}\n${points}`;
+    const week = lesson.week ? `Week ${lesson.week}` : '';
+    const type = lesson.type || '';
+    const num = lesson.lesson_number || '';
+
+    // Extract readable point labels from learning_points
+    const pts = (lesson.learning_points || []).slice(0, 4).map(p => {
+      if (typeof p === 'string') return p;
+      if (typeof p === 'object' && p.point) return p.point + (p.details ? ': ' + p.details.substring(0, 80) : '');
+      return '';
+    }).filter(Boolean);
+
+    // Build a topic summary from the first 2 points
+    const topicSummary = pts.slice(0, 2).join('; ');
+    const label = [week, type, num].filter(Boolean).join(' - ');
+    const linkHtml = url ? `<a href="${url}">deschide lecția</a>` : '';
+
+    return `📚 ${label}${topicSummary ? ' — acoperă: ' + topicSummary : ''} ${linkHtml}\n` +
+      pts.slice(0, 4).map(p => `  • ${p}`).join('\n');
   });
 
-  return `LECȚII RELEVANTE — FOLOSEȘTE ACESTE LINKURI DIRECTE SPRE LECȚII SPECIFICE (nu spre cursuri generale). Dacă recomanzi una, include linkul <a href="..."> din câmpul de mai jos:\n\n${lines.join('\n\n')}`;
+  return `LECȚII RELEVANTE — LINKURI DIRECTE SPRE LECȚII SPECIFICE (nu spre cursuri):
+Folosește DOAR URL-urile de mai jos. NU inventa alte URL-uri. Dacă recomanzi o lecție, include linkul <a href="URL">deschide lecția</a> exact din lista de mai jos.
+
+${lines.join('\n\n')}`;
 }
 
 async function detectPreferences(messageText) {
