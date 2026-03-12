@@ -26,73 +26,129 @@ async function callOpenAI(messages, opts = {}) {
 const STATIC_COURSE_SUMMARY = `
 📚 Baza Solidă (Săptămânile 1-13, 3 luni):
   Programul de bază pentru începători. Acoperă fundamentele limbii engleze.
-  • Month 1 (Weeks 1-4): Introducere, Pronunție, Prezent Simplu, TO BE, Verbe auxiliare, Întrebări și negații
-  • Month 2 (Weeks 5-8): Substantive și Articole, Adjective, Pronume, Posesiv, Prepoziții (At/To, In/On/At)
-  • Month 3 (Weeks 9-12): Adverbe, Propozitii (Imperativ, Declaratii), Conjuncții, Timpul Progresiv
+  • <a href="https://academy.englezabritanica.com/courses/c/f560c267-ad3e-4b90-855c-d1f1de808e05">Month 1</a> (Weeks 1-4): Introducere, Pronunție, Prezent Simplu, TO BE, Verbe auxiliare, Întrebări și negații
+  • <a href="https://academy.englezabritanica.com/courses/c/812976f5-ba03-471b-a9f5-7e58bbbe9511">Month 2</a> (Weeks 5-8): Substantive și Articole, Adjective, Pronume, Posesiv, Prepoziții (At/To, In/On/At)
+  • <a href="https://academy.englezabritanica.com/courses/c/edbfefbb-94cd-4b1d-90e7-a5cfbe0b563b">Month 3</a> (Weeks 9-12): Adverbe, Propozitii (Imperativ, Declaratii), Conjuncții, Timpul Progresiv
   Fiecare săptămână include: Pronunție, 2 lecții de Gramatică, 2 liste de Vocabular, Exersare, Temă, Recapitulare PDF, Quiz, Audio
 
 📚 Exprimare Clară (Săptămânile 14-26, 3 luni):
   Nivel intermediar. Dezvoltă capacitatea de exprimare.
-  • Month 1 (Weeks 14-17): Alfabetul, Spelling, Numere, Timpul Viitor
-  • Month 2 (Weeks 18-21): Adjective comparative/superlative, Obligații, Timpul trecut
-  • Month 3 (Weeks 22-25): Timpul trecut avansat, Verbe modale, Întrebări deschise
+  • <a href="https://academy.englezabritanica.com/courses/c/217cf63d-3fb5-49dd-8bf2-ed49e10adfea">Month 1</a> (Weeks 14-17): Alfabetul, Spelling, Numere, Timpul Viitor
+  • <a href="https://academy.englezabritanica.com/courses/c/fb9982e0-83cd-445c-b6da-681c73a0e533">Month 2</a> (Weeks 18-21): Adjective comparative/superlative, Obligații, Timpul trecut
+  • <a href="https://academy.englezabritanica.com/courses/c/b1c78691-f9ed-472c-ae0a-e9734ec87e0f">Month 3</a> (Weeks 22-25): Timpul trecut avansat, Verbe modale, Întrebări deschise
 
 📚 Idei Legate (Săptămânile 27-39, 3 luni):
   Nivel intermediar-avansat. Conectarea ideilor complexe.
-  • Month 1 (Weeks 27-30): Conditionals, Dummy Subjects, Indefinite Pronouns, Linking Verbs
-  • Month 2 (Weeks 31-34): Gerunds & Infinitives, Adjective (-ed/-ing)
-  • Month 3 (Weeks 35-38): Adverbe de timp, Propoziții complexe, Relative pronouns
+  • <a href="https://academy.englezabritanica.com/courses/c/b9515421-d1d1-443b-ad3e-9032349a794a">Month 1</a> (Weeks 27-30): Conditionals, Dummy Subjects, Indefinite Pronouns, Linking Verbs
+  • <a href="https://academy.englezabritanica.com/courses/c/41e0ec6a-9bbd-486a-8e98-47b303e73781">Month 2</a> (Weeks 31-34): Gerunds & Infinitives, Adjective (-ed/-ing)
+  • <a href="https://academy.englezabritanica.com/courses/c/b63f2371-5fa7-476a-8da0-f7e7a9b06323">Month 3</a> (Weeks 35-38): Adverbe de timp, Propoziții complexe, Relative pronouns
 
 📚 Engleză Reală (Săptămânile 40-51, 3 luni):
   Nivel avansat. Engleza autentică și naturală.
-  • Month 1 (Weeks 40-43): Compound Nouns/Adjectives, Phrasal Verbs, Collocations, Past Progressive
-  • Month 2 (Weeks 44-47): Modal Verbs (Past), Conditional 2nd/3rd, Delexical Verbs, Used to
-  • Month 3 (Weeks 48-51): Talking about time, Passive Voice, Articles advanced, Stranded Prepositions, 12 timpuri verbale
+  • <a href="https://academy.englezabritanica.com/courses/c/a4465805-90bb-4660-afbb-6decd2bbd0ba">Month 1</a> (Weeks 40-43): Compound Nouns/Adjectives, Phrasal Verbs, Collocations, Past Progressive
+  • <a href="https://academy.englezabritanica.com/courses/c/88486dc4-3cbc-4956-a767-57818c9b8550">Month 2</a> (Weeks 44-47): Modal Verbs (Past), Conditional 2nd/3rd, Delexical Verbs, Used to
+  • <a href="https://academy.englezabritanica.com/courses/c/8dd10b6e-559e-4d90-b927-6e918b043df4">Month 3</a> (Weeks 48-51): Talking about time, Passive Voice, Articles advanced, Stranded Prepositions, 12 timpuri verbale
 
-📚 Vocabular (8 Module + extra):
-  Colecții separate de vocabular, Lists 1-96+, organizate în module de câte 4 colecții
+📚 Vocabular (8 Module):
+  Colecții separate de vocabular: <a href="https://academy.englezabritanica.com/courses/c/3e446874-fd88-42ab-85aa-36616dbebbba">Modul 1</a>, <a href="https://academy.englezabritanica.com/courses/c/7ba053ce-d8d6-4e16-998e-adfecdc511bd">Modul 2</a>, <a href="https://academy.englezabritanica.com/courses/c/5d100813-fa94-4b27-aae5-767ae77d654b">Modul 3</a>, <a href="https://academy.englezabritanica.com/courses/c/b69608b1-96e7-4a73-8e0d-d7e5edc6193a">Modul 4</a>, <a href="https://academy.englezabritanica.com/courses/c/33a57eb4-3517-477c-977c-f16c4fbf021c">Modul 5</a>, <a href="https://academy.englezabritanica.com/courses/c/01842054-ac15-4837-8f47-7e2cef8e7b84">Modul 6</a>, <a href="https://academy.englezabritanica.com/courses/c/789e1bc8-e71c-4c4c-a611-fb7b45c085b5">Modul 7</a>, <a href="https://academy.englezabritanica.com/courses/c/fd425b22-4062-4995-8ec6-70ae9d31999e">Modul 8</a>
 
-📚 Engleza Britanică din Mers:
+📚 <a href="https://academy.englezabritanica.com/courses/c/848f36a6-2f0b-4e57-a177-a35c89254661">Engleza Britanică din Mers</a>:
   Curs în clasă, 2 module (24 săptămâni de lecții)
 
-📚 Transformă-ți Engleza în 2025!:
+📚 <a href="https://academy.englezabritanica.com/courses/c/3cfd71d8-d535-4cb4-9425-94528d8488c0">Transformă-ți Engleza în 2025!</a>:
   Curs introductiv gratuit cu 15 strategii de învățare, prezentat de Alasdair Jones
 
 📚 Cursuri suplimentare:
-  • Pronunție Perfectă — 48 lecții de pronunție
-  • Propoziții simple — construirea propozițiilor
-  • Baza esențială P1 & P2 — fundamente esențiale
-  • Timpul viitor / Timpul trecut & adjective comparative
-  • Verbe modale & timpul trecut
-  • Structuri gramaticale esențiale
-  • Construcții cu Infinitiv și Gerunziu
-  • Propoziții complexe
-  • Unități lexicale compuse și expresii
-  • Construcții avansate / Expresii și structuri esențiale
-  • Collocations, Phrasal Verbs, Advanced Grammar, Idioms
-  • Speech Analysis, Text Analysis
-  • Module de pronunție: Sunete de vocale, Sunete de consoane, Vorbirea legată, Exersare
-  • Primii pași în Engleza Britanică Academy — ghid de start`.trim();
+  • <a href="https://academy.englezabritanica.com/courses/c/bc5e2693-6b4d-4f7b-81e3-92081768fa51">Pronunție Perfectă</a> — 48 lecții de pronunție
+  • <a href="https://academy.englezabritanica.com/courses/c/5c6a89bb-8a41-4d3c-a842-ba3a731316d5">Propoziții simple</a> — construirea propozițiilor
+  • <a href="https://academy.englezabritanica.com/courses/c/0aa78fa9-2959-44dc-91f2-8b9dcb0cf888">Baza esențială P1</a> & <a href="https://academy.englezabritanica.com/courses/c/c4972f69-0d79-4857-9cfa-3054d1fbafbc">P2</a> — fundamente esențiale
+  • <a href="https://academy.englezabritanica.com/courses/c/084f5333-8be1-4097-b04a-7e09ce1dd88b">Timpul viitor</a> / <a href="https://academy.englezabritanica.com/courses/c/6bc8772f-ec37-4a79-bf10-7931c90a4ffa">Timpul trecut & adjective comparative</a>
+  • <a href="https://academy.englezabritanica.com/courses/c/0955be74-dbc2-4f1a-8452-c68a150cc519">Verbe modale & timpul trecut</a>
+  • <a href="https://academy.englezabritanica.com/courses/c/30af0ebf-79ef-43aa-9b1c-51f766fb3fa7">Structuri gramaticale esențiale</a>
+  • <a href="https://academy.englezabritanica.com/courses/c/30001419-afb2-45c3-ad89-64e7233f0d77">Construcții cu Infinitiv și Gerunziu</a>
+  • <a href="https://academy.englezabritanica.com/courses/c/9b957106-18b8-4d09-b01b-1358e55eab22">Propoziții complexe</a>
+  • <a href="https://academy.englezabritanica.com/courses/c/8f20d1ab-1f36-4d4a-82d1-4447b9bf0dd8">Unități lexicale compuse și expresii</a>
+  • <a href="https://academy.englezabritanica.com/courses/c/eab4f7d0-f5ac-4cbc-8fbf-f8a47c37168f">Construcții avansate</a> / <a href="https://academy.englezabritanica.com/courses/c/d8d28784-3aee-4716-9c23-8bcba61a131b">Expresii și structuri esențiale</a>
+  • <a href="https://academy.englezabritanica.com/courses/c/a37dbeb0-f479-4203-bb90-3f29635521e5">Collocations</a>, <a href="https://academy.englezabritanica.com/courses/c/adde6c79-4b6b-4824-b3be-629b2510da94">Phrasal Verbs</a>, <a href="https://academy.englezabritanica.com/courses/c/c345e579-0149-4e13-a58e-06b7bd9c3dda">Advanced Grammar</a>, <a href="https://academy.englezabritanica.com/courses/c/84c2cdeb-b0cc-49db-9f3a-55aff4ffaea8">Idioms</a>
+  • <a href="https://academy.englezabritanica.com/courses/c/e279939e-7872-4354-8051-a56dc78c8fe1">Speech Analysis</a>, <a href="https://academy.englezabritanica.com/courses/c/e42c8a95-730b-442e-bc53-e698da6bd970">Text Analysis</a>
+  • Module de pronunție: <a href="https://academy.englezabritanica.com/courses/c/5a518973-c65c-45ed-bb13-731ef831b169">Sunete de vocale</a>, <a href="https://academy.englezabritanica.com/courses/c/0edbc2a2-324f-4e77-86c5-7cfb9cfb498c">Sunete de consoane</a>, <a href="https://academy.englezabritanica.com/courses/c/ccb0caa8-5b79-4294-bf0a-4b9b8402b5dc">Vorbirea legată</a>, <a href="https://academy.englezabritanica.com/courses/c/b7de2cec-0684-4b2c-b5d4-25a9900a888f">Exersare</a>
+  • <a href="https://academy.englezabritanica.com/courses/c/d5c13c3b-a4d7-425f-9d27-3c7135f9e662">Primii pași în Engleza Britanică Academy</a> — ghid de start`.trim();
 
 const STATIC_CHANNEL_LIST = `
-  🗣️ Temele - Pronunție — postează temele de pronunție
-  📅 Engleza Zilnică — exerciții zilnice
-  🧵 Bine ați venit — mesaje de bun venit
-  🤝 Ajutor Suplimentar — ajutor extra de la echipă
-  ❓ Întrebări și Răspunsuri — pune întrebări despre engleză
-  🏆 Progrese și Succese — celebrează realizările
-  🔗 Nivel 3 - Structura Integrată — conținut nivel 3
-  📣 PROVOCARE - Sunetele Britanice — provocări de pronunție
-  ❓ Întrebări — întrebări generale
-  🕙 Nivel 2 - Timpuri Explicate — conținut nivel 2
-  🎓 General - RO — discuții generale în română
-  📝 Temele - UK — teme în engleză
-  🎓 Anunțuri și Info — anunțuri oficiale
-  😉 Jokes and Teasers — glume și provocări
-  👋 Bine ai venit — canal de bun venit
-  📝 Temele - RO — teme în română
-  🎓 General - UK — discuții generale în engleză
-  📝 Temele - Gramatică — teme de gramatică`.trim();
+  🗣️ <a href="https://academy.englezabritanica.com/t/Temele%20-%20Pronuntie">Temele - Pronuntie</a> — postează temele de pronunție
+  📅 <a href="https://academy.englezabritanica.com/t/Engleza%20Zilnica">Engleza Zilnica</a> — exerciții zilnice
+  🧵 <a href="https://academy.englezabritanica.com/t/Bine%20ati%20venit">Bine ati venit</a> — mesaje de bun venit
+  🤝 <a href="https://academy.englezabritanica.com/t/Ajutor%20Suplimentar">Ajutor Suplimentar</a> — ajutor extra de la echipă
+  ❓ <a href="https://academy.englezabritanica.com/t/Intrebari%20si%20Raspunsuri">Intrebari si Raspunsuri</a> — pune întrebări despre engleză
+  🏆 <a href="https://academy.englezabritanica.com/t/Progrese%20%C8%99i%20Succese">Progrese și Succese</a> — celebrează realizările
+  🔗 <a href="https://academy.englezabritanica.com/t/Nivel%203%20-%20Structura%20Integrata">Nivel 3 - Structura Integrata</a> — conținut nivel 3
+  📣 <a href="https://academy.englezabritanica.com/t/PROVOCARE%20-%20Sunetele%20Britanice">PROVOCARE - Sunetele Britanice</a> — provocări de pronunție
+  ❓ <a href="https://academy.englezabritanica.com/t/Intrebari%20">Intrebari</a> — întrebări generale
+  🕙 <a href="https://academy.englezabritanica.com/t/Nivel%202%20-%20Timpuri%20Explicate">Nivel 2 - Timpuri Explicate</a> — conținut nivel 2
+  🎓 <a href="https://academy.englezabritanica.com/t/General%20-%20RO">General - RO</a> — discuții generale în română
+  📝 <a href="https://academy.englezabritanica.com/t/Temele%20-%20UK">Temele - UK</a> — teme în engleză
+  🎓 <a href="https://academy.englezabritanica.com/t/Anunturi%20si%20Info">Anunturi si Info</a> — anunțuri oficiale
+  😉 <a href="https://academy.englezabritanica.com/t/Jokes%20and%20Teasers">Jokes and Teasers</a> — glume și provocări
+  👋 <a href="https://academy.englezabritanica.com/t/Bine%20ai%20venit">Bine ai venit</a> — canal de bun venit
+  📝 <a href="https://academy.englezabritanica.com/t/Temele%20-%20RO">Temele - RO</a> — teme în română
+  🎓 <a href="https://academy.englezabritanica.com/t/General%20-%20UK">General - UK</a> — discuții generale în engleză
+  📝 <a href="https://academy.englezabritanica.com/t/Temele%20-%20Gramatica">Temele - Gramatica</a> — teme de gramatică`.trim();
+
+
+// Cached deep links data
+let _deepLinksCache = null;
+
+function loadDeepLinks() {
+  if (_deepLinksCache) return _deepLinksCache;
+  try {
+    const deepLinksPath = path.join(__dirname, '..', '..', 'community_structure', 'deep_links.json');
+    if (fs.existsSync(deepLinksPath)) {
+      _deepLinksCache = JSON.parse(fs.readFileSync(deepLinksPath, 'utf8'));
+    } else {
+      // Try alternate path
+      const altPath = path.resolve(__dirname, '..', '..', '..', 'community_structure', 'deep_links.json');
+      if (fs.existsSync(altPath)) {
+        _deepLinksCache = JSON.parse(fs.readFileSync(altPath, 'utf8'));
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load deep_links.json:', err.message);
+  }
+  return _deepLinksCache;
+}
+
+/**
+ * Find lesson URLs matching a query
+ * @param {string} lessonQuery - Search term for lesson name
+ * @param {string} [courseName] - Optional course name to search within
+ * @returns {Array} Matching lessons with name, url, courseName
+ */
+function findLessonUrl(lessonQuery, courseName) {
+  const deepLinks = loadDeepLinks();
+  if (!deepLinks || !deepLinks.courses) return [];
+
+  const query = lessonQuery.toLowerCase();
+  const results = [];
+
+  for (const course of deepLinks.courses) {
+    if (courseName && !course.name.toLowerCase().includes(courseName.toLowerCase())) {
+      continue;
+    }
+    for (const lesson of course.lessons) {
+      if (lesson.name.toLowerCase().includes(query)) {
+        results.push({
+          name: lesson.name,
+          url: lesson.url,
+          courseName: course.name,
+          courseUrl: course.url,
+          module: lesson.module
+        });
+      }
+    }
+  }
+
+  return results;
+}
 
 /**
  * Build course summary — tries Supabase cache first, falls back to static
@@ -252,6 +308,13 @@ Limbajul unui prieten, nu al unui serviciu:
 - "ai dispărut 😄 — totul bine?" nu "am observat inactivitate recentă"
 - "ăsta e un pas mare" nu "ai înregistrat progrese semnificative"
 
+LINKURI — FOARTE IMPORTANT:
+Când recomanzi un curs, o lecție sau un canal, ÎNTOTDEAUNA include un link clickabil folosind HTML.
+Format: <a href="URL">Textul vizibil</a>
+Exemplu: "Ar fi bine să te uiți la <a href="https://academy.englezabritanica.com/courses/c/f560c267-ad3e-4b90-855c-d1f1de808e05">Baza Solidă - Month 1</a>, mai ales lecțiile de pronunție."
+NU folosi markdown links [text](url) — doar HTML <a> tags.
+Folosește linkurile din secțiunea STRUCTURA ACADEMIEI de mai sus.
+
 STRUCTURA ACADEMIEI:
 ${courseSummary}
 
@@ -273,4 +336,4 @@ Când ceva e relevant pentru situația studentului, poți referi la materiale sp
 De exemplu: \"Conform lecției Gramatică Săptămâna 5...\", \"Din materialul Vocabular...\", etc.`;
 }
 
-module.exports = { buildSystemPrompt, buildCoursesSummary, buildChannelList, searchTranscripts, callOpenAI };
+module.exports = { buildSystemPrompt, buildCoursesSummary, buildChannelList, searchTranscripts, callOpenAI, findLessonUrl };
