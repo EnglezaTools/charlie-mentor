@@ -226,6 +226,17 @@ async function handleDirectMessage(event) {
       messages[0].content += `\n\n${prefsContext}`;
     }
 
+    // Search lesson_index for relevant lessons based on student's message
+    try {
+      const relevantLessons = await findRelevantLessons(messageContent, supabase);
+      if (relevantLessons && relevantLessons.length > 0) {
+        const lessonContext = buildLessonContext(relevantLessons);
+        messages[0].content += `\n\n${lessonContext}`;
+      }
+    } catch (lessonErr) {
+      console.warn('[DM] Lesson search failed (non-fatal):', lessonErr.message);
+    }
+
     // Get Charlie's response
     step = 'CALL_OPENAI';
     const response = await callOpenAI(messages);
@@ -657,6 +668,86 @@ async function generateCourseCongratsMessage(firstName, courseName) {
  * Detect student preferences from their message using AI
  * Returns null if no preferences found, otherwise returns a preferences object
  */
+/**
+ * Search lesson_index for lessons relevant to the student's message.
+ * Returns top 3 matching lessons with URLs and learning points.
+ */
+async function findRelevantLessons(message, supabase) {
+  if (!message || message.length < 10) return [];
+
+  // Fetch all lesson_index entries (cached lookup - only ~254 rows)
+  const { data: lessons, error } = await supabase
+    .from('lesson_index')
+    .select('lesson_id, lesson_name, lesson_url, type, week, lesson_number, learning_points')
+    .not('lesson_url', 'is', null);
+
+  if (error || !lessons || lessons.length === 0) return [];
+
+  const msgLower = message.toLowerCase();
+
+  // Score each lesson by keyword matches in learning_points and lesson_name
+  const scored = lessons.map(lesson => {
+    let score = 0;
+    const name = (lesson.lesson_name || '').toLowerCase();
+
+    // Check lesson name
+    const msgWords = msgLower.split(/\s+/).filter(w => w.length > 3);
+    for (const word of msgWords) {
+      if (name.includes(word)) score += 2;
+    }
+
+    // Check learning points (handle both string and object format)
+    const points = lesson.learning_points || [];
+    const pointsText = points.map(p => {
+      if (typeof p === 'string') return p.toLowerCase();
+      if (typeof p === 'object') return `${p.point || ''} ${p.details || ''}`.toLowerCase();
+      return '';
+    }).join(' ');
+
+    for (const word of msgWords) {
+      if (pointsText.includes(word)) score += 1;
+    }
+
+    // Extra boost for English grammar/language concept keywords
+    const englishKeywords = ['grammar', 'pronunciation', 'vocabulary', 'verb', 'tense', 'article', 
+      'preposition', 'adjective', 'adverb', 'noun', 'present', 'past', 'future', 'perfect',
+      'modal', 'conditional', 'passive', 'question', 'negative', 'contraction', 'stress',
+      'intonation', 'spelling', 'idiom', 'phrasal', 'collocation'];
+    for (const kw of englishKeywords) {
+      if (msgLower.includes(kw) && pointsText.includes(kw)) score += 3;
+    }
+
+    return { ...lesson, score };
+  });
+
+  // Return top 3 relevant lessons (score > 0)
+  return scored
+    .filter(l => l.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+}
+
+/**
+ * Build lesson context string to inject into Charlie's system prompt.
+ */
+function buildLessonContext(lessons) {
+  if (!lessons || lessons.length === 0) return '';
+
+  const lines = lessons.map(lesson => {
+    const points = (lesson.learning_points || []).slice(0, 3).map(p => {
+      if (typeof p === 'string') return `- ${p}`;
+      if (typeof p === 'object') return `- ${p.point}: ${p.details || ''}`;
+      return '';
+    }).filter(Boolean).join('\n');
+
+    const label = lesson.lesson_name || `${lesson.type} ${lesson.lesson_number || ''}`;
+    const url = lesson.lesson_url || '';
+    return `📚 ${label}${url ? ` → <a href="${url}">deschide lecția</a>` : ''}\n${points}`;
+  });
+
+  return `RELEVANT LESSONS FOR THIS CONVERSATION (use these when recommending resources — include the HTML link naturally in your message if you reference one):\n\n${lines.join('\n\n')}`;
+}
+
 async function detectPreferences(messageText) {
   const detectionMessages = [
     {
