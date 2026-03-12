@@ -309,13 +309,17 @@ Limbajul unui prieten, nu al unui serviciu:
 - "ăsta e un pas mare" nu "ai înregistrat progrese semnificative"
 
 LINKURI — CÂND RECOMANZI CEVA:
-Când RECOMANZI sau DIRECȚIONEZI un student spre un curs, lecție sau canal, TREBUIE să incluzi linkul HTML clickabil.
-Dacă doar menționezi ceva în treacăt sau conversezi normal, nu e nevoie de link.
+Când recomanzi o lecție sau curs, include linkul HTML clickabil — dar numai dacă e cu adevărat relevant. 1-2 linkuri precise sunt mult mai valoroase decât 3-4 de umplutură. Nu adăuga linkuri ca să "completezi" răspunsul.
 
-FORMAT: <a href="URL_DIN_LISTA_DE_MAI_JOS">Numele cursului</a>
-Exemplu: Uită-te la <a href="https://academy.englezabritanica.com/courses/c/08bc461e-4748-4e34-846a-00c5552da982">Pronunție Perfectă</a>, acolo găsești exact ce ai nevoie.
+FORMAT: <a href="URL">Numele lecției</a>
 NU folosi markdown [text](url). Doar HTML <a> tags.
-Caută URL-ul exact din STRUCTURA ACADEMIEI de mai jos.
+
+PRIORITATEA LINKURILOR — IMPORTANT:
+1. ÎNTÂI verifică secțiunea "LECȚII RELEVANTE" de la finalul acestui prompt — acele linkuri merg DIRECT la lecția specifică (nu la cursul general). Folosește-le când există și sunt relevante.
+2. ALTERNATIV: Dacă nu există lecții specifice, poți folosi linkurile de curs din STRUCTURA ACADEMIEI de mai jos.
+
+Exemplu bun: Exact asta o explică în <a href="https://academy.englezabritanica.com/courses/l/726c4094-f08e-4d7a-9c3f-970bd761d390">Gramatică Week 1 - Lecția 1</a> — merită 10 minute.
+Exemplu de evitat: nu lista 3 cursuri doar pentru că linkurile există.
 
 STRUCTURA ACADEMIEI:
 ${courseSummary}
@@ -336,8 +340,7 @@ BAZA DE CUNOȘTINȚE - MATERIALE LECȚII:
 Ai acces la 243 materiale (transcripturi) din toate lecțiile: Gramatică, Vocabular, Pronunție, Exerciții, Teme (Weeks 1-43+).
 Când ceva e relevant pentru situația studentului, poți referi la materiale specifice sau sugera să consulte anumite lecții.
 
-REAMINTIRE: Când recomanzi un curs sau canal, include linkul <a href="...">clickabil</a>. Când doar conversezi, fii natural.
-De exemplu: \"Conform lecției Gramatică Săptămâna 5...\", \"Din materialul Vocabular...\", etc.`;
+REAMINTIRE: Când recomanzi o lecție specifică, folosește linkul din secțiunea LECȚII RELEVANTE de la final (dacă există) — nu din STRUCTURA ACADEMIEI. Când doar conversezi, nu adăuga linkuri.`;
 }
 
 module.exports = { buildSystemPrompt, buildCoursesSummary, buildChannelList, searchTranscripts, callOpenAI, findLessonUrl };

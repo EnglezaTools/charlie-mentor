@@ -745,7 +745,7 @@ function buildLessonContext(lessons) {
     return `📚 ${label}${url ? ` → <a href="${url}">deschide lecția</a>` : ''}\n${points}`;
   });
 
-  return `RELEVANT LESSONS FOR THIS CONVERSATION (use these when recommending resources — include the HTML link naturally in your message if you reference one):\n\n${lines.join('\n\n')}`;
+  return `LECȚII RELEVANTE — FOLOSEȘTE ACESTE LINKURI DIRECTE SPRE LECȚII SPECIFICE (nu spre cursuri generale). Dacă recomanzi una, include linkul <a href="..."> din câmpul de mai jos:\n\n${lines.join('\n\n')}`;
 }
 
 async function detectPreferences(messageText) {
