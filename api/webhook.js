@@ -494,7 +494,14 @@ async function handleUserUpdate(event) {
 async function generateWelcomeBack(user) {
   try {
     const firstName = user.first_name || 'prietene';
-    const groups = (user.groups || []).join(', ');
+    const memberGroups = user.groups || [];
+    const groupNames = memberGroups.map(g => typeof g === 'string' ? g : g.name || '').join(', ');
+
+    // Pick 2 lesson suggestions for returning students
+    const { pickSuggestedLessons, formatSuggestionsContext } = require('./_lib/suggestions');
+    const suggestions = await pickSuggestedLessons(memberGroups);
+    const suggestionsContext = formatSuggestionsContext(suggestions, 'reactive');
+
     const messages = [
       {
         role: 'system',
@@ -502,14 +509,18 @@ async function generateWelcomeBack(user) {
       },
       {
         role: 'user',
-        content: `Scrie un mesaj SCURT de "bine ai revenit" pentru ${firstName}, care tocmai s-a conectat după câteva zile de absență.
-Cursuri/grupuri: ${groups || 'student obișnuit'}
+        content: `Scrie un mesaj de "bine ai revenit" pentru ${firstName}, care tocmai s-a conectat după câteva zile de absență.
+Cursuri/grupuri: ${groupNames || 'student obișnuit'}
+
+${suggestionsContext}
+
 Mesajul trebuie să fie:
-- 2 propoziții MAXIM
-- Cald și personal, nu generic
+- 2-4 propoziții
+- Cald și personal, nu generic — zero vinovăție, zero judecată
 - Să nu înceapă cu "Bună ziua" sau formule formale
-- Să îl facă să se simtă binevenit și motivat să continue
-- Să nu predea engleza, doar să încurajeze`
+- Dacă menționezi lecții, prezintă-le ca opțiuni ușoare: "mi-ar plăcea să îți arăt X sau Y — spune-mi dacă ești curios/ă"
+- Folosește [SPLIT] dacă vrei să trimiți 2 mesaje separate
+- Să nu predea engleza, doar să încurajeze și să invite`
       }
     ];
     const { callOpenAI } = require('./_lib/charlie');
@@ -845,29 +856,51 @@ async function findRelevantLessons(message, supabase) {
 function buildLessonContext(lessons) {
   if (!lessons || lessons.length === 0) return '';
 
+  // Map week ranges to course names for breadcrumb
+  const weekToCourse = w => {
+    if (w >= 1 && w <= 13) return 'Baza Solidă';
+    if (w >= 14 && w <= 26) return 'Exprimare Clară';
+    if (w >= 27 && w <= 39) return 'Idei Legate';
+    if (w >= 40 && w <= 51) return 'Engleza Reală';
+    return '';
+  };
+
   const lines = lessons.map(lesson => {
     const url = lesson.lesson_url || '';
-    const week = lesson.week ? `Week ${lesson.week}` : '';
-    const type = lesson.type || '';
-    const num = lesson.lesson_number || '';
+    const name = lesson.lesson_name || '';
+    const week = lesson.week;
+    const course = week ? weekToCourse(week) : '';
 
-    // Extract readable point labels from learning_points
+    // Breadcrumb: "Week 23 — Baza Solidă"
+    const breadcrumb = [week ? `Week ${week}` : '', course].filter(Boolean).join(' — ');
+
+    // Extract readable learning points
     const pts = (lesson.learning_points || []).slice(0, 4).map(p => {
       if (typeof p === 'string') return p;
       if (typeof p === 'object' && p.point) return p.point + (p.details ? ': ' + p.details.substring(0, 80) : '');
       return '';
     }).filter(Boolean);
 
-    // Build a topic summary from the first 2 points
-    const topicSummary = pts.slice(0, 2).join('; ');
-    const label = [week, type, num].filter(Boolean).join(' - ');
-    const linkHtml = url ? `<a href="${url}">deschide lecția</a>` : '';
+    // Link uses lesson name as text (not generic "deschide lecția")
+    const linkHtml = url && name ? `<a href="${url}">${name}</a>` : (url ? `<a href="${url}">deschide lecția</a>` : '');
 
-    return `📚 ${label}${topicSummary ? ' — acoperă: ' + topicSummary : ''} ${linkHtml}\n` +
-      pts.slice(0, 4).map(p => `  • ${p}`).join('\n');
+    return `📚 ${name}${breadcrumb ? ` (${breadcrumb})` : ''}\n` +
+      `  🔗 Link: ${linkHtml}\n` +
+      (pts.length ? `  Acoperă:\n` + pts.slice(0, 3).map(p => `  • ${p}`).join('\n') : '');
   });
 
-  return `LECȚII RELEVANTE GĂSITE — FOLOSEȘTE ACESTE URL-URI EXACTE:\nAcestea sunt lecțiile reale din academie care acoperă subiectul întrebării studentului.\n- Folosește URL-ul EXACT de mai jos (format /courses/l/uuid) — nu îl modifica\n- NU inventa titluri de lecții sau URL-uri noi\n- Format link: <a href="URL_EXACT">deschide lecția</a>\n\n${lines.join('\\n\\n')}`
+  return `LECȚII RELEVANTE GĂSITE — FOLOSEȘTE ACESTE URL-URI EXACTE:
+Acestea sunt lecțiile reale din academie care acoperă subiectul întrebării studentului.
+
+REGULI DE FORMATARE:
+- Folosește URL-ul EXACT de mai jos — nu îl modifica niciodată
+- ⚠️ Format link OBLIGATORIU: <a href="URL_EXACT">Numele Lecției</a> — linkul trebuie să aibă NUMELE LECȚIEI ca text, nu "deschide lecția"
+- Când recomanzi activ o lecție, menționează 1-2 lucruri specifice pe care le acoperă (din lista "Acoperă" de mai jos) — face recomandarea să pară concretă și utilă
+- Când menționezi lecția în treacăt, folosește doar linkul cu numele
+- Adaugă breadcrumb-ul (ex: "Week 23 — Baza Solidă") ca context de orientare
+- NU inventa titluri de lecții sau URL-uri noi
+
+${lines.join('\n\n')}`
 }
 
 async function detectPreferences(messageText) {

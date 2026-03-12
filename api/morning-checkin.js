@@ -12,6 +12,7 @@ async function sendSplitMessages(recipientId, response) {
 }
 const { callOpenAI } = require('./_lib/charlie');
 const { supabase } = require('./_lib/supabase');
+const { pickSuggestedLessons, formatSuggestionsContext } = require('./_lib/suggestions');
 
 const CHARLIE_USER_ID = '4123ccdd-a337-4438-b5ff-fcaad1464102';
 const MAX_MESSAGES_PER_RUN = 15; // Safety cap — prevent mass messaging
@@ -355,6 +356,18 @@ async function generateProactiveMessage(member, studentData, activityData = {}, 
       `- Motiv check-in: ${reason}`
     ].filter(Boolean).join('\n');
 
+    // Detect if student is unengaged — offer gentle lesson suggestions
+    const isUnengaged = (
+      (daysSinceLogin !== null && daysSinceLogin >= 7) ||
+      (member.groups || []).some(g => (typeof g === 'string' ? g : g.name || '').toLowerCase().includes('inactive'))
+    ) && (daysSinceJoined === null || daysSinceJoined > 14);
+
+    let suggestionsContext = '';
+    if (isUnengaged) {
+      const suggestions = await pickSuggestedLessons(member.groups || []);
+      suggestionsContext = formatSuggestionsContext(suggestions, 'proactive');
+    }
+
     const messages = [
       {
         role: 'system',
@@ -373,12 +386,14 @@ REGULI:
         content: `Scrie un mesaj proactiv scurt și personal pentru ${firstName}.
 
 ${contextLines}
+${suggestionsContext ? '\n' + suggestionsContext : ''}
 
 INSTRUCȚIUNI:
-- Maximum 2-3 propoziții
+- Maximum 2-3 propoziții (dacă menționezi lecții, pot fi 3-4)
 - Nu începe cu "Bună ziua" sau formule formale
 - Fii natural și cald, ca și cum ai scrie unui prieten
-- Adaptează tonul la situație (nou = entuziasm, inactiv = îngrijorare caldă, streak oprit = încurajare)
+- Adaptează tonul la situație (nou = entuziasm, inactiv = îngrijorare caldă + invitație curioasă, streak oprit = încurajare)
+- Dacă există sugestii de lecții și studentul e inactiv, menționează 1-2 ca o curiozitate ușoară: "mi-ar plăcea să îți arăt X sau Y — spune-mi dacă ești curios/ă"
 - Nu fi dramatic sau exagerat
 - Semnează scurt: "— Charlie 👋" la final`
       }
