@@ -1,205 +1,181 @@
-/**
- * Async endpoint to extract learning points from all transcripts
- * Loads transcripts from JSON file in deployment
- */
+import { createClient } from '@supabase/supabase-js';
 
-const { createClient } = require('@supabase/supabase-js');
-const path = require('path');
+const supabaseUrl = process.env.SUPABASE_URL || 'https://wmrlffmknipgbmzwfpsc.supabase.co';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const openaiKey = process.env.OPENAI_API_KEY;
 
-// Initialize Supabase
-const supabase = createClient(
-  process.env.SUPABASE_PROJECT_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+export default async function handler(req, res) {
+  // CORS headers for async status checks
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-// Load transcripts data
-let transcriptData = null;
-function getTranscripts() {
-  if (!transcriptData) {
-    try {
-      transcriptData = require('../data/transcripts_extracted.json');
-    } catch (e) {
-      console.error('[extract-learning-points] Failed to load transcripts:', e.message);
-      return null;
-    }
-  }
-  return transcriptData;
-}
-
-// Helper to call OpenAI API for learning point extraction
-async function extractLearningPoints(transcript, lessonName) {
-  if (!process.env.OPENAI_API_KEY) {
-    console.error('[extract-learning-points] OPENAI_API_KEY not set');
-    return [];
-  }
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert language learning instructor. Analyze lesson transcripts and extract 4-8 KEY LEARNING POINTS - specific concepts, grammar rules, pronunciation tips, or vocabulary patterns students will learn.
-
-Each point should be:
-- Specific and actionable (not generic)
-- Distinct from other lessons (avoid generic topics like "verb to be")
-- Include concrete examples or distinctions
-- 1-2 sentences max
-
-Example format for different lessons on similar topics:
-Lesson A: "Contractions with TO BE: 's, 'm, 're, 'd, 've, 'll forms and common spelling mistakes"
-Lesson B: "When contractions change meaning or are forbidden: negative imperatives, emphatic statements, tag questions"
-
-Return ONLY a valid JSON array, no markdown, no explanation.`
-        },
-        {
-          role: 'user',
-          content: `Extract learning points from this lesson transcript:\n\n${transcript.substring(0, 3000)}`
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 500
-    })
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    console.error(`[extract-learning-points] OpenAI error for ${lessonName}:`, error.error?.message || error);
-    return [];
-  }
-
-  const data = await response.json();
-  const content = data.choices[0]?.message?.content?.trim();
-  
-  if (!content) {
-    console.error(`[extract-learning-points] Empty response from OpenAI for ${lessonName}`);
-    return [];
+  if (!supabaseKey || !openaiKey) {
+    return res.status(500).json({ 
+      error: 'Missing environment variables (SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY)' 
+    });
   }
 
   try {
-    const points = JSON.parse(content);
-    return Array.isArray(points) ? points : [];
-  } catch (e) {
-    console.error(`[extract-learning-points] JSON parse error for ${lessonName}:`, e.message, 'Content:', content.substring(0, 100));
-    return [];
-  }
-}
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Main extraction function
-async function runExtraction(startIndex = 0, batchSize = 50) {
-  console.log(`[extract-learning-points] Starting extraction from index ${startIndex}, batch size ${batchSize}`);
-
-  try {
-    // Load transcript data from JSON
-    const data = getTranscripts();
-    if (!data || !data.lessons) {
-      console.error('[extract-learning-points] Failed to load transcript data');
-      return;
-    }
-
-    const lessons = data.lessons;
-    const endIndex = Math.min(startIndex + batchSize, lessons.length);
-
-    console.log(`[extract-learning-points] Loaded ${lessons.length} total lessons, processing ${startIndex}-${endIndex}`);
-
-    let successCount = 0;
-    let skippedCount = 0;
-
-    for (let i = startIndex; i < endIndex; i++) {
-      const lesson = lessons[i];
+    // Check if this is a status check
+    if (req.query.status === 'true') {
+      const { count } = await supabase
+        .from('lesson_index')
+        .select('id', { count: 'exact', head: true });
       
-      if (!lesson.lesson_id || !lesson.text) {
-        console.log(`[extract-learning-points] Skipping lesson ${i}: missing data`);
-        skippedCount++;
-        continue;
-      }
+      return res.status(200).json({ 
+        status: 'running',
+        lessons_processed: count || 0 
+      });
+    }
 
+    // Return 202 immediately - work happens asynchronously
+    res.status(202).json({ 
+      message: 'Extraction started in background',
+      status_url: `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/extract-learning-points?status=true`
+    });
+
+    // Do the actual work AFTER responding
+    setImmediate(async () => {
       try {
-        console.log(`[extract-learning-points] [${i + 1}/${lessons.length}] Extracting: ${lesson.lesson_name}`);
+        console.log('[extract-learning-points] Starting extraction...');
 
-        // Extract learning points
-        const learningPoints = await extractLearningPoints(lesson.text, lesson.lesson_name);
+        // Get all transcripts that don't have learning points extracted yet
+        const { data: transcripts, error: fetchError } = await supabase
+          .from('transcripts')
+          .select('id, lesson_id, lesson_url, lesson_name, week, type, lesson_number, content')
+          .is('id', null) // Get all - we'll check lesson_index separately
+          .limit(250);
 
-        if (learningPoints.length === 0) {
-          console.log(`[extract-learning-points]   → No points extracted (may be exercise/short content)`);
-          continue;
+        if (fetchError) throw fetchError;
+
+        if (!transcripts || transcripts.length === 0) {
+          console.log('[extract-learning-points] No transcripts found');
+          return;
         }
 
-        // Upsert into lesson_index
-        const { error: upsertError } = await supabase
-          .from('lesson_index')
-          .upsert({
-            lesson_id: lesson.lesson_id,
-            lesson_url: `/courses/l/${lesson.lesson_id}`,
-            lesson_name: lesson.lesson_name,
-            week: lesson.week || null,
-            type: lesson.type || null,
-            lesson_number: lesson.lesson_number || null,
-            learning_points: learningPoints,
-            transcript_summary: lesson.text.substring(0, 500)
-          }, { onConflict: 'lesson_id' });
+        console.log(`[extract-learning-points] Found ${transcripts.length} transcripts to process`);
 
-        if (upsertError) {
-          console.error(`[extract-learning-points]   ✗ Upsert failed:`, upsertError.message);
-        } else {
-          successCount++;
-          console.log(`[extract-learning-points]   ✓ Stored ${learningPoints.length} points`);
+        let processed = 0;
+        let skipped = 0;
+
+        for (const transcript of transcripts) {
+          try {
+            // Check if already extracted
+            const { data: existing } = await supabase
+              .from('lesson_index')
+              .select('id')
+              .eq('lesson_id', transcript.lesson_id)
+              .single();
+
+            if (existing) {
+              skipped++;
+              continue;
+            }
+
+            // Extract learning points using Claude
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${openaiKey}`
+              },
+              body: JSON.stringify({
+                model: 'gpt-4-turbo',
+                temperature: 0.3,
+                max_tokens: 500,
+                messages: [
+                  {
+                    role: 'system',
+                    content: `You are an expert English language instructor. Extract 4-8 specific, granular learning points from this lesson transcript. 
+                    
+Each point should be:
+- A concrete concept or skill students will learn
+- Specific enough to search by (not generic)
+- In the format: "Topic: specific detail or rule"
+
+Examples:
+- "Contractions with TO BE: 's, 'm, 're forms and when contractions are forbidden (negative imperatives)"
+- "Pronunciation: Word stress differences between noun (RECord) and verb (reCORD) forms"
+- "Common mistakes: When to use 'much' vs 'many' with countable/uncountable nouns"
+
+Return ONLY a JSON array of strings, no other text.`
+                  },
+                  {
+                    role: 'user',
+                    content: `Extract learning points from this lesson:\n\n${transcript.content.substring(0, 8000)}`
+                  }
+                ]
+              })
+            });
+
+            if (!response.ok) {
+              const error = await response.text();
+              console.log(`[extract-learning-points] Claude API error for lesson ${transcript.lesson_id}: ${error}`);
+              continue;
+            }
+
+            const data = await response.json();
+            let learningPoints = [];
+
+            try {
+              const content = data.choices[0].message.content;
+              learningPoints = JSON.parse(content);
+              
+              if (!Array.isArray(learningPoints)) {
+                learningPoints = [content];
+              }
+            } catch (e) {
+              console.log(`[extract-learning-points] Could not parse Claude response for ${transcript.lesson_id}`);
+              continue;
+            }
+
+            // Store in lesson_index
+            const { error: insertError } = await supabase
+              .from('lesson_index')
+              .upsert({
+                lesson_id: transcript.lesson_id,
+                lesson_url: transcript.lesson_url,
+                lesson_name: transcript.lesson_name,
+                week: transcript.week,
+                type: transcript.type,
+                lesson_number: transcript.lesson_number,
+                learning_points: learningPoints,
+                transcript_summary: transcript.content.substring(0, 500),
+                created_at: new Date().toISOString()
+              }, { onConflict: 'lesson_id' });
+
+            if (insertError) {
+              console.log(`[extract-learning-points] Insert error for ${transcript.lesson_id}: ${insertError.message}`);
+              continue;
+            }
+
+            processed++;
+            if (processed % 10 === 0) {
+              console.log(`[extract-learning-points] Progress: ${processed} processed, ${skipped} skipped`);
+            }
+
+            // Small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+          } catch (error) {
+            console.log(`[extract-learning-points] Error processing lesson ${transcript.lesson_id}: ${error.message}`);
+          }
         }
 
-        // Rate limiting to respect OpenAI API
-        if ((i - startIndex + 1) % 10 === 0) {
-          console.log(`[extract-learning-points] Processed ${i - startIndex + 1} in this batch, pausing...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
+        console.log(`[extract-learning-points] Complete: ${processed} extracted, ${skipped} skipped`);
 
-      } catch (lessonError) {
-        console.error(`[extract-learning-points] Error processing lesson ${lesson.lesson_id}:`, lessonError.message);
+      } catch (error) {
+        console.error('[extract-learning-points] Background error:', error.message);
       }
-    }
-
-    const nextStart = endIndex < lessons.length ? endIndex : null;
-    console.log(`[extract-learning-points] ✓ Batch complete: ${successCount} successful, ${skippedCount} skipped`);
-    if (nextStart) {
-      console.log(`[extract-learning-points] → Next batch: /api/extract-learning-points?start=${nextStart}`);
-    } else {
-      console.log(`[extract-learning-points] ✓ EXTRACTION COMPLETE! All ${lessons.length} lessons processed.`);
-    }
+    });
 
   } catch (error) {
-    console.error('[extract-learning-points] Fatal error:', error.message);
-    console.error(error.stack);
+    console.error('[extract-learning-points] Handler error:', error);
+    return res.status(500).json({ 
+      error: error.message 
+    });
   }
 }
-
-// Main handler
-module.exports = async (req, res) => {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const startIndex = parseInt(req.query.start || '0');
-  const batchSize = parseInt(req.query.batch_size || '50');
-
-  console.log(`[extract-learning-points] Endpoint triggered: start=${startIndex}, batch=${batchSize}`);
-
-  // Return 202 immediately
-  res.status(202).json({
-    status: 'extraction_started',
-    message: `Processing batch starting at lesson ${startIndex}. Watch Vercel logs for progress.`,
-    start_index: startIndex,
-    batch_size: batchSize,
-    estimated_duration: `${Math.ceil((batchSize / 60) * 5)} minutes`,
-    next_batch_url: `Visit /api/extract-learning-points?start=${startIndex + batchSize} after this batch completes (if needed)`
-  });
-
-  // Run extraction asynchronously (non-blocking)
-  runExtraction(startIndex, batchSize).catch(err => {
-    console.error('[extract-learning-points] Background error:', err.message);
-  });
-};
