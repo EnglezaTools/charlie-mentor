@@ -711,7 +711,9 @@ async function findRelevantLessons(message, supabase) {
     'contraction','gerund','infinitive','participle','reported','indirect',
     'pronunciation','vocabulary','grammar','spelling','idiom','adverb',
     'adjective','determiner','quantifier','relative','clause','conjunction',
-    'present','future','continuous','simple','irregular'
+    'present','future','continuous','simple','irregular',
+    'verb','noun','pronoun','plural','singular','compound','comparative','superlative',
+    'auxiliary','negation','question','linking','imperative'
   ]);
 
   // Romanian grammar terms → English equivalents (for student messages in Romanian)
@@ -810,6 +812,19 @@ async function findRelevantLessons(message, supabase) {
     if (matchingPoints >= 2) totalScore += matchingPoints * 2;
     // Bonus: lessons with a week number are structured course lessons
     if (lesson.week) totalScore += 1;
+    // Strong bonus: lesson NAME contains query keywords (lesson is specifically about this topic)
+    const lessonNameLower = (lesson.lesson_name || '').toLowerCase();
+    for (const word of msgWords) {
+      const canonical = fuzzyTopicMatch(word) || word;
+      if (lessonNameLower.includes(word) || lessonNameLower.includes(canonical)) {
+        totalScore += 20; // Lesson is explicitly about this topic
+      }
+    }
+    // Grammar type bonus when query has grammar-related keywords
+    const grammarQuery = msgWords.some(w => fuzzyTopicMatch(w) !== null);
+    if (grammarQuery && lesson.type === 'Grammar') {
+      totalScore += 5;
+    }
 
     return { ...lesson, score: Math.round(totalScore) };
   });
