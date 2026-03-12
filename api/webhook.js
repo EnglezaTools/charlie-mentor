@@ -724,8 +724,28 @@ async function findRelevantLessons(message, supabase) {
     'adjective','determiner','quantifier','relative','clause','conjunction',
     'present','future','continuous','simple','irregular',
     'verb','noun','pronoun','plural','singular','compound','comparative','superlative',
-    'auxiliary','negation','question','linking','imperative'
+    'auxiliary','negation','question','linking','imperative',
+    'obligation','necessity','permission','ability','possibility','probability'
   ]);
+
+  // Concept expansion: specific words that signal a broader grammar topic
+  // e.g. asking about "must" → should also match "obligation" lessons
+  const CONCEPT_MAP = {
+    'must': 'obligation', 'mustn': 'obligation',
+    'must not': 'obligation', 'mustn't': 'obligation',
+    'have to': 'obligation', 'has to': 'obligation', 'had to': 'obligation',
+    'need to': 'obligation', 'needs to': 'obligation',
+    'don't have to': 'obligation', 'doesn't have to': 'obligation',
+    'should': 'obligation', 'shouldn't': 'obligation', 'ought': 'obligation',
+    'can': 'modal', 'can't': 'modal', 'cannot': 'modal',
+    'could': 'modal', 'couldn't': 'modal',
+    'may': 'modal', 'might': 'modal',
+    'will': 'modal', 'won't': 'modal', 'would': 'modal', 'wouldn't': 'modal',
+    'allowed': 'permission', 'allow': 'permission', 'permitted': 'permission',
+    'able': 'ability', 'ability': 'ability',
+    'possible': 'possibility', 'possibly': 'possibility',
+    'probably': 'probability', 'probable': 'probability'
+  };
 
   // Romanian grammar terms → English equivalents (for student messages in Romanian)
   const RO_TO_EN = {
@@ -758,14 +778,35 @@ async function findRelevantLessons(message, supabase) {
     'accent': 'stress', 'accentul': 'stress',
     'neregulat': 'irregular', 'neregulate': 'irregular', 'neregulata': 'irregular',
     'frazal': 'phrasal', 'frazale': 'phrasal',
-    'simplu': 'simple', 'simpla': 'simple', 'simplă': 'simple'
+    'simplu': 'simple', 'simpla': 'simple', 'simplă': 'simple',
+    'obligatie': 'obligation', 'obligație': 'obligation',
+    'obligatii': 'obligation', 'obligații': 'obligation',
+    'obligatoriu': 'obligation', 'obligatorie': 'obligation',
+    'necesitate': 'necessity', 'permisiune': 'permission', 'permisiuni': 'permission',
+    'abilitate': 'ability', 'capacitate': 'ability',
+    'posibilitate': 'possibility', 'probabilitate': 'probability'
   };
 
   // Translate Romanian terms to English before scoring
-  const msgWords = msgLower
+  const rawWords = msgLower
     .split(/[\s,.?!;:()\/]+/)
     .filter(w => w.length > 2 && !STOP_WORDS.has(w))
     .map(w => RO_TO_EN[w] || w);
+
+  // Also check multi-word concept phrases in original message (e.g. "need to", "have to")
+  const conceptExpansions = [];
+  for (const [phrase, concept] of Object.entries(CONCEPT_MAP)) {
+    if (msgLower.includes(phrase)) {
+      conceptExpansions.push(concept);
+    }
+  }
+
+  // Single-word concept lookups (for words like "must", "should", "can")
+  const msgWords = [...new Set([
+    ...rawWords,
+    ...rawWords.map(w => CONCEPT_MAP[w]).filter(Boolean),
+    ...conceptExpansions
+  ])];
 
   if (msgWords.length === 0) return [];
 
