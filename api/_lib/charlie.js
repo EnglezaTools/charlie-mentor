@@ -315,8 +315,12 @@ FORMAT: <a href="URL">Numele lecției</a>
 NU folosi markdown [text](url). Doar HTML <a> tags.
 
 PRIORITATEA LINKURILOR — IMPORTANT:
-1. ÎNTÂI verifică secțiunea "LECȚII RELEVANTE" de la finalul acestui prompt — acele linkuri merg DIRECT la lecția specifică (nu la cursul general). Folosește-le când există și sunt relevante.
-2. ALTERNATIV: Dacă nu există lecții specifice, poți folosi linkurile de curs din STRUCTURA ACADEMIEI de mai jos.
+1. ÎNTÂI verifică secțiunea "LECȚII RELEVANTE" din mesajul de sistem de la FINALUL conversației — acele linkuri merg DIRECT la lecția specifică (nu la cursul general). Folosește URL-urile EXACTE din acea secțiune.
+2. ALTERNATIV: Dacă nu există lecții specifice relevante, poți folosi linkurile de curs din STRUCTURA ACADEMIEI de mai jos.
+
+⚠️ REGULĂ CRITICĂ: Nu inventa NICIODATĂ un titlu de lecție sau un URL. Dacă nu ai un URL specific dintr-una din sursele de mai sus, nu menționa o lecție specifică — spune că vei verifica sau indică cursul general.
+Greșit: "verifică lecția despre Verbe modale & timpul trecut" (inventat — nu există)
+Corect: <a href="URL_DIN_LECȚII_RELEVANTE">deschide lecția</a> (URL exact primit)
 
 Exemplu bun: Exact asta o explică în <a href="https://academy.englezabritanica.com/courses/l/726c4094-f08e-4d7a-9c3f-970bd761d390">Gramatică Week 1 - Lecția 1</a> — merită 10 minute.
 Exemplu de evitat: nu lista 3 cursuri doar pentru că linkurile există.

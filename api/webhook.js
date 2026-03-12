@@ -227,17 +227,26 @@ async function handleDirectMessage(event) {
     }
 
     // Search lesson_index for relevant lessons based on student's message
+    // Inject as a SEPARATE system message at the END (just before API call)
+    // so it's the most recently seen context — not buried in the long system prompt
+    let lessonSystemMsg = null;
     try {
       const relevantLessons = await findRelevantLessons(messageContent, supabase);
       if (relevantLessons && relevantLessons.length > 0) {
         const lessonContext = buildLessonContext(relevantLessons);
-        messages[0].content += `\n\n${lessonContext}`;
+        lessonSystemMsg = { role: 'system', content: lessonContext };
+        console.log(`[DM] Found ${relevantLessons.length} relevant lessons for: "${messageContent.substring(0, 60)}"`);
       }
     } catch (lessonErr) {
       console.warn('[DM] Lesson search failed (non-fatal):', lessonErr.message);
     }
 
     // Get Charlie's response
+    // Insert lesson context as final system message (highest priority, seen last)
+    if (lessonSystemMsg) {
+      messages.push(lessonSystemMsg);
+    }
+
     step = 'CALL_OPENAI';
     const response = await callOpenAI(messages);
 
@@ -702,12 +711,48 @@ async function findRelevantLessons(message, supabase) {
     'contraction','gerund','infinitive','participle','reported','indirect',
     'pronunciation','vocabulary','grammar','spelling','idiom','adverb',
     'adjective','determiner','quantifier','relative','clause','conjunction',
-    'present','future','continuous','simple','irregular','irregular'
+    'present','future','continuous','simple','irregular'
   ]);
 
+  // Romanian grammar terms → English equivalents (for student messages in Romanian)
+  const RO_TO_EN = {
+    'conjunctii': 'conjunction', 'conjuncții': 'conjunction', 'conjunctie': 'conjunction', 'conjuncție': 'conjunction',
+    'timpuri': 'tense', 'timp': 'tense', 'tense': 'tense',
+    'prezent': 'present', 'trecut': 'tense', 'viitor': 'future',
+    'perfect': 'perfect',
+    'continuu': 'continuous', 'continua': 'continuous',
+    'modal': 'modal', 'modale': 'modal', 'verbele': 'verb', 'verbe': 'verb',
+    'pasiv': 'passive', 'pasiva': 'passive', 'pasivul': 'passive',
+    'conditional': 'conditional',
+    'articol': 'article', 'articole': 'article', 'articulat': 'article',
+    'prepozitie': 'preposition', 'prepoziție': 'preposition', 'prepozitii': 'preposition', 'prepoziții': 'preposition',
+    'pronuntie': 'pronunciation', 'pronunție': 'pronunciation', 'pronuntii': 'pronunciation',
+    'vocabular': 'vocabulary',
+    'gramatica': 'grammar', 'gramatică': 'grammar', 'gramatical': 'grammar',
+    'ortografie': 'spelling',
+    'idiom': 'idiom', 'idiomuri': 'idiom', 'idiomatic': 'idiom',
+    'adverb': 'adverb', 'adverbe': 'adverb',
+    'adjectiv': 'adjective', 'adjective': 'adjective',
+    'relativ': 'relative', 'relativa': 'relative', 'relativă': 'relative',
+    'propozitie': 'clause', 'propoziție': 'clause', 'propozitii': 'clause',
+    'gerunziu': 'gerund', 'gerunziu': 'gerund',
+    'infinitiv': 'infinitive',
+    'participiu': 'participle',
+    'vorbire': 'reported', 'indirecta': 'indirect', 'indirectă': 'indirect',
+    'contractie': 'contraction', 'contracție': 'contraction', 'contractii': 'contraction',
+    'colocatie': 'collocation', 'colocație': 'collocation', 'colocatii': 'collocation',
+    'intonatie': 'intonation', 'intonație': 'intonation',
+    'accent': 'stress', 'accentul': 'stress',
+    'neregulat': 'irregular', 'neregulate': 'irregular', 'neregulata': 'irregular',
+    'frazal': 'phrasal', 'frazale': 'phrasal',
+    'simplu': 'simple', 'simpla': 'simple', 'simplă': 'simple'
+  };
+
+  // Translate Romanian terms to English before scoring
   const msgWords = msgLower
     .split(/[\s,.?!;:()\/]+/)
-    .filter(w => w.length > 3 && !STOP_WORDS.has(w));
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w))
+    .map(w => RO_TO_EN[w] || w);
 
   if (msgWords.length === 0) return [];
 
@@ -715,6 +760,16 @@ async function findRelevantLessons(message, supabase) {
   const phrases = [];
   for (let i = 0; i < msgWords.length - 1; i++) {
     phrases.push(msgWords[i] + ' ' + msgWords[i+1]);
+  }
+
+  // Fuzzy-match: "conjunctions" → "conjunction", "modals" → "modal" etc.
+  // Returns the canonical topic keyword if this word is a form of one, else null
+  function fuzzyTopicMatch(word) {
+    if (TOPIC_KEYWORDS.has(word)) return word;
+    for (const kw of TOPIC_KEYWORDS) {
+      if (word.startsWith(kw) || kw.startsWith(word)) return kw;
+    }
+    return null;
   }
 
   const scored = lessons.map(lesson => {
@@ -732,10 +787,14 @@ async function findRelevantLessons(message, supabase) {
       let ptScore = 0;
 
       for (const word of msgWords) {
-        if (TOPIC_KEYWORDS.has(word) && pt.includes(word)) {
-          ptScore += 4; // Topic keyword found in this specific point
-        } else if (pt.includes(word)) {
-          ptScore += 0.5; // Generic match
+        const canonicalTopic = fuzzyTopicMatch(word);
+        const ptHasWord = pt.includes(word);
+        const ptHasTopic = canonicalTopic && pt.includes(canonicalTopic);
+
+        if (canonicalTopic && (ptHasWord || ptHasTopic)) {
+          ptScore += 4; // Topic keyword (or its plural/variant) found in this point
+        } else if (ptHasWord) {
+          ptScore += 0.5; // Generic exact match
         }
       }
       // Phrase match within a single point (highest quality signal)
@@ -755,8 +814,8 @@ async function findRelevantLessons(message, supabase) {
     return { ...lesson, score: Math.round(totalScore) };
   });
 
-  // Minimum score: require at least one topic keyword match
-  const hasTopic = msgWords.some(w => TOPIC_KEYWORDS.has(w));
+  // Minimum score: require at least one topic keyword match (including fuzzy)
+  const hasTopic = msgWords.some(w => fuzzyTopicMatch(w) !== null);
   const minScore = hasTopic ? 6 : 4;
 
   return scored
@@ -793,10 +852,7 @@ function buildLessonContext(lessons) {
       pts.slice(0, 4).map(p => `  • ${p}`).join('\n');
   });
 
-  return `LECȚII RELEVANTE — LINKURI DIRECTE SPRE LECȚII SPECIFICE (nu spre cursuri):
-Folosește DOAR URL-urile de mai jos. NU inventa alte URL-uri. Dacă recomanzi o lecție, include linkul <a href="URL">deschide lecția</a> exact din lista de mai jos.
-
-${lines.join('\n\n')}`;
+  return `LECȚII RELEVANTE GĂSITE — FOLOSEȘTE ACESTE URL-URI EXACTE:\nAcestea sunt lecțiile reale din academie care acoperă subiectul întrebării studentului.\n- Folosește URL-ul EXACT de mai jos (format /courses/l/uuid) — nu îl modifica\n- NU inventa titluri de lecții sau URL-uri noi\n- Format link: <a href="URL_EXACT">deschide lecția</a>\n\n${lines.join('\\n\\n')}`
 }
 
 async function detectPreferences(messageText) {
