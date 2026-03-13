@@ -248,7 +248,7 @@ async function handleDirectMessage(event) {
     }
 
     step = 'CALL_OPENAI';
-    const response = await callOpenAI(messages);
+    const response = await callOpenAI(messages, { max_tokens: 300, temperature: 0.7 });
 
     // Send response back to student (split into natural conversational messages)
     step = 'SEND_REPLY';
