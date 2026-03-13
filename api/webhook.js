@@ -181,8 +181,11 @@ async function handleDirectMessage(event) {
     const student = await getUserById(senderUserID).catch(() => null);
     const studentId = student?.heartbeat_id || senderUserID;
 
+    // Detect language of student's message (simple: count Romanian vs English patterns)
+    const messageLanguage = detectLanguage(messageContent);
+    
     // Build Charlie's context-aware system prompt (pass full student object, fallback to empty)
-    const systemPrompt = await buildSystemPrompt(student || { heartbeat_id: studentId, groups: [], onboarding_responses: {} });
+    const systemPrompt = await buildSystemPrompt(student || { heartbeat_id: studentId, groups: [], onboarding_responses: {} }, messageLanguage);
 
     // Get conversation history for continuity
     const { data: history } = await supabase
@@ -316,6 +319,43 @@ async function handleDirectMessage(event) {
     } catch (_) {}
     return;
   }
+}
+
+/**
+ * Detect if message is in English or Romanian
+ */
+function detectLanguage(text) {
+  if (!text) return 'romanian'; // default
+  
+  const lower = text.toLowerCase();
+  
+  // Common Romanian words/patterns
+  const roPatterns = [
+    'și', 'este', 'sunt', 'care', 'în', 'de', 'cu', 'pentru', 'pe', 
+    'este', 'ți', 'scriu', 'mă', 'te', 'voi', 'ești', 'vreau', 'pot',
+    'curs', 'lectie', 'lecție', 'engleza', 'cum', 'ce', 'cand', 'când',
+    'daca', 'dacă', 'incerc', 'incerc', 'greu', 'problema'
+  ];
+  
+  // Common English words/patterns
+  const enPatterns = [
+    'and', 'the', 'is', 'are', 'for', 'you', 'me', 'my', 'what', 'how',
+    'can', 'will', 'would', 'should', 'could', 'lesson', 'help', 'thanks',
+    'about', 'understand', 'question', 'think', 'good', 'okay', 'really'
+  ];
+  
+  let roScore = 0, enScore = 0;
+  for (const word of roPatterns) {
+    if (lower.includes(word)) roScore += 2;
+  }
+  for (const word of enPatterns) {
+    if (lower.includes(word)) enScore += 2;
+  }
+  
+  // Also check for accent patterns (Romanian has ă, ț, ş, ş, etc.)
+  if (/[ăîțşğ]/.test(text)) roScore += 10;
+  
+  return enScore > roScore ? 'english' : 'romanian';
 }
 
 /**
