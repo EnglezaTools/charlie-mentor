@@ -399,16 +399,13 @@ FORMAT: <a href="URL">Textul clickabil</a>
 NU folosi markdown [text](url). Doar HTML <a> tags.
 
 PRIORITATEA RESURSELOR — CUM SĂ RECOMANZI:
-1. **Lecții specifice** (dacă sunt relevante): Din secțiunea "LECȚII RELEVANTE" de la finalul conversației — acele linkuri merg DIRECT la lecția specifică. Folosește URL-urile EXACTE.
+1. **Lecții specifice** (recordate) (dacă sunt relevante): Din secțiunea "LECȚII RELEVANTE" de la finalul conversației — acele linkuri merg DIRECT la lecția specifică cu înregistrarea. Folosește URL-urile EXACTE.
    Exemplu: Exact asta o explică în <a href="https://academy.englezabritanica.com/courses/l/726c4094-f08e-4d7a-9c3f-970bd761d390">Gramatică Week 18 — Obligații</a> — merită ascultat acolo.
 
 2. **Resurse wiki** (pentru referință rapidă): <a href="https://academy.englezabritanica.com/wiki">Resurse academiei</a> — are detalii structurate pe teme.
    Exemplu: "Resurse-ul academiei are o secțiune bună pe asta, dacă vrei detalii"
 
-3. **Cursuri generale** (dacă nu e lecție specifică): Linkuri din STRUCTURA ACADEMIEI de mai jos.
-   Exemplu: "Asta se acoperă în Exprimare Clară Week 18"
-
-4. **Instrumente** (SpeakReady, Fluency Vault, etc): Mențiune naturală, nu link.
+3. **Instrumente** (SpeakReady, Fluency Vault, Contractions Conquered, Reading Room, Hartley Files, Idiom Atlas): Mențiune naturală, nu link.
    Exemplu: "SpeakReady ar fi perfect pentru asta — situații reale, feedback imediat"
 
 ⚠️ REGULĂ CRITICĂ: NU INVENTA resurse sau URL-uri. Dacă nu ai sursa exactă, nu cita-o.
@@ -430,9 +427,7 @@ Grupuri/Badge-uri: ${groups}
 Membru din: ${student.created_at || 'Necunoscut'}
 Ultima activitate cu Charlie: ${student.last_seen || 'Prima vizită'}
 
-BAZA DE CUNOȘTINȚE - MATERIALE LECȚII:
-Ai acces la 243 materiale (transcripturi) din toate lecțiile: Gramatică, Vocabular, Pronunție, Exerciții, Teme (Weeks 1-43+).
-Când ceva e relevant pentru situația studentului, poți referi la materiale specifice sau sugera să consulte anumite lecții.
+
 
 REAMINTIRE: Când recomanzi o lecție specifică, folosește linkul din secțiunea LECȚII RELEVANTE de la final (dacă există) — nu din STRUCTURA ACADEMIEI. Când doar conversezi, nu adăuga linkuri.`;
 }
