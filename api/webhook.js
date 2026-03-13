@@ -881,12 +881,15 @@ async function findRelevantLessons(message, supabase) {
     return { ...lesson, score: Math.round(totalScore) };
   });
 
-  // Minimum score: require at least one topic keyword match (including fuzzy)
+  // CRITICAL: Only return lessons if student is asking about a TOPIC
+  // (grammar, vocabulary, pronunciation, idioms, etc.)
+  // Otherwise, Charlie shouldn't recommend lessons for casual messages like "hey, how are you?"
   const hasTopic = msgWords.some(w => fuzzyTopicMatch(w) !== null);
-  const minScore = hasTopic ? 6 : 4;
+  
+  if (!hasTopic) return []; // No lessons unless student asks about something substantive
 
   return scored
-    .filter(l => l.score >= minScore)
+    .filter(l => l.score >= 6)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
 }
