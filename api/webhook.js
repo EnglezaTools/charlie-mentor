@@ -383,6 +383,19 @@ async function handleUserJoin(event) {
 
     console.log(`[USER_JOIN] ${userName} (${userId}) joined`);
 
+    // Skip if user has "No access" tag (not a paying member)
+    try {
+      const user = await getUserById(userId);
+      const groups = (user?.groups || []).map(g => typeof g === 'string' ? g : g.name || '');
+      if (groups.some(g => g.toLowerCase() === 'no access')) {
+        console.log(`[USER_JOIN] Skipping welcome for ${userName} — No access tag detected`);
+        return;
+      }
+    } catch (e) {
+      // If we can't fetch user, proceed with welcome (safer approach)
+      console.warn(`[USER_JOIN] Could not verify user groups, proceeding with welcome`);
+    }
+
     // Generate warm welcome message via AI
     const welcomeMsgs = await callOpenAI([
       {
@@ -451,6 +464,13 @@ async function handleUserUpdate(event) {
 
     const groups = user.groups || [];
     const groupStr = groups.join(' ').toLowerCase();
+    
+    // Skip "No access" users
+    if (groupStr.includes('no access')) {
+      console.log(`[USER_UPDATE] Skipping login processing for ${user.first_name} — No access tag detected`);
+      return;
+    }
+
     const hasLoginSignal = groupStr.includes('log-in') || groupStr.includes('login') || groupStr.includes('active');
 
     if (!hasLoginSignal) {
@@ -650,6 +670,18 @@ async function handleCourseCompleted(event) {
     }
 
     console.log(`[COURSE_COMPLETED] User ${userId} completed "${courseName}"`);
+
+    // Skip if user has "No access" tag (not a paying member)
+    try {
+      const user = await getUserById(userId);
+      const groups = (user?.groups || []).map(g => typeof g === 'string' ? g : g.name || '');
+      if (groups.some(g => g.toLowerCase() === 'no access')) {
+        console.log(`[COURSE_COMPLETED] Skipping congratulations for user ${userId} — No access tag detected`);
+        return;
+      }
+    } catch (e) {
+      console.warn(`[COURSE_COMPLETED] Could not verify user groups, proceeding with message`);
+    }
 
     // Record activity in activity_log
     const romanianNow = new Date(Date.now() + 2 * 3600 * 1000);
@@ -1149,6 +1181,18 @@ async function handleGroupJoin(event) {
     const groupName = event.groupName || event.group_name || event.name || 'curs nou';
 
     console.log(`[GROUP_JOIN] ${userName} joined "${groupName}"`);
+
+    // Skip if user has "No access" tag (not a paying member)
+    try {
+      const user = await getUserById(userId);
+      const groups = (user?.groups || []).map(g => typeof g === 'string' ? g : g.name || '');
+      if (groups.some(g => g.toLowerCase() === 'no access')) {
+        console.log(`[GROUP_JOIN] Skipping encouragement for ${userName} — No access tag detected`);
+        return;
+      }
+    } catch (e) {
+      console.warn(`[GROUP_JOIN] Could not verify user groups, proceeding with message`);
+    }
 
     const courseMsg = await callOpenAI([
       {

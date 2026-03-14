@@ -94,6 +94,13 @@ module.exports = async (req, res) => {
       if (member.is_admin) continue;
       if (!member.heartbeat_id) continue;
 
+      // Skip "No access" users (not paying members)
+      const groups = (member.groups || []).map(g => typeof g === 'string' ? g : g.name || '');
+      if (groups.some(g => g.toLowerCase() === 'no access')) {
+        summary.skipped++;
+        continue;
+      }
+
       summary.studentsEvaluated++;
 
       const studentData = studentMap[member.heartbeat_id] || {};
