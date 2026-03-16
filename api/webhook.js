@@ -1173,8 +1173,12 @@ async function trackMessageSession(studentId) {
 
 /**
  * When a student joins a course
+ * DISABLED 2026-03-16: Was firing for all users with generic 'curs nou' — needs investigation
  */
 async function handleGroupJoin(event) {
+  console.log('[GROUP_JOIN] HANDLER DISABLED — webhook disabled due to spam issue');
+  return;
+  
   try {
     const userId = event.userID || event.user_id;
     const userName = event.fullName || event.name || event.user_name || 'student';
