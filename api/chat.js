@@ -79,28 +79,36 @@ module.exports = async function handler(req, res) {
 
       let greetingContent;
       if (hasOnboarding) {
-        const dream = ob.answers.dream_scenario || '';
-        const challenges = (ob.answers.biggest_challenges || []).join(', ');
-        const selfConscious = ob.answers.most_self_conscious || '';
-        const goals = (ob.answers.why_english || []).join(', ');
-        const level = ob.recommendation?.level || '';
-        const location = ob.answers.location || '';
-        const inUK = location && (location.toLowerCase().includes('uk') || location.toLowerCase().includes('londra') || location.toLowerCase().includes('manchester') || location.toLowerCase().includes('birmingham') || ob.answers.years_in_uk);
+        // Use the pre-digested Charlie profile if available (enriched format)
+        const cp = ob.charlie;
+        let contextNote;
+        if (cp && cp.charlie_opening_note) {
+          contextNote = `Context despre student: ${cp.charlie_opening_note}`;
+        } else {
+          // Fall back to raw fields for older profiles
+          const dream = ob.answers.dream_scenario || '';
+          const challenges = (ob.answers.biggest_challenges || []).join(', ');
+          const selfConscious = ob.answers.most_self_conscious || '';
+          const goals = (ob.answers.why_english || []).join(', ');
+          const level = ob.recommendation?.level || '';
+          const location = ob.answers.location || '';
+          const inUK = location && (location.toLowerCase().includes('uk') || location.toLowerCase().includes('londra') || location.toLowerCase().includes('manchester') || location.toLowerCase().includes('birmingham') || ob.answers.years_in_uk);
+          contextNote = `Informații din chestionarul de onboarding:\n- Visul lor: "${dream}"\n- De ce studiază: ${goals}\n- Provocări: ${challenges}\n- Nesiguranță: ${selfConscious}\n- Nivel: ${level}\n${inUK ? `- UK (${location})` : `- Locație: ${location}`}`;
+        }
 
-        greetingContent = `[Studentul ${firstName} tocmai s-a conectat la chat.
+        const personalityHint = !cp ? '' :
+          cp.personality_type === 'anxious_perfectionist' ? '\nATENȚIE: Perfecționist anxios — validează că e OK să înceapă imperfect, nu adăuga presiune.' :
+          cp.personality_type === 'lapsed_learner' ? '\nATENȚIE: A mai abandonat — zero vinovăție, bucuros că s-a întors.' :
+          cp.personality_type === 'busy_professional' ? '\nATENȚIE: Timp limitat — un singur pas concret, scurt.' : '';
 
-Ai aceste informații din chestionarul lor de onboarding:
-- Visul/scopul lor: "${dream}"
-- De ce studiază engleza: ${goals}
-- Provocările principale: ${challenges}
-- Ce îi face să se simtă nesiguri: ${selfConscious}
-- Nivelul lor evaluat: ${level}
-${inUK ? `- Locuiesc în UK (${location})` : `- Locație: ${location}`}
+        greetingContent = `[Studentul ${firstName} tocmai s-a conectat la chat pentru prima dată.
 
-Salută-l PERSONAL și SPECIFIC — alege UN singur element din visul sau provocările lor care rezonează cel mai mult și menționează-l natural, ca și cum știai deja cine sunt. 
-NU lista toate informațiile. NU fii generic ("bun venit!", "cum merge?"). 
+${contextNote}${personalityHint}
+
+Salută-l PERSONAL și SPECIFIC — alege UN singur element din visul sau provocările lor și menționează-l natural, ca și cum știai deja cine sunt. 
+NU lista toate informațiile. NU fii generic. 
 Fă-i să simtă că sunt VĂZUȚI — că cineva știe DE CE sunt aici.
-Fii cald, scurt (2-3 propoziții), și lasă ușa deschisă pentru conversație.]`;
+Fii cald, scurt (2-3 propoziții), lasă ușa deschisă pentru conversație.]`;
       } else {
         greetingContent = `[Studentul tocmai s-a conectat la chat. Salută-l pe ${firstName} cu căldură, întreabă cum se simte și cum merge cu învățarea. Fii scurt și prietenos — max 2-3 propoziții.]`;
       }
