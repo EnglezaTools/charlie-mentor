@@ -72,9 +72,42 @@ module.exports = async function handler(req, res) {
     ];
 
     if (isGreeting) {
+      // Build a personalised greeting if we have onboarding data
+      const ob = student.onboarding_responses || {};
+      const hasOnboarding = ob.answers && (ob.answers.dream_scenario || ob.answers.biggest_challenges?.length);
+      const firstName = student.first_name || ob.answers?.name || 'student';
+
+      let greetingContent;
+      if (hasOnboarding) {
+        const dream = ob.answers.dream_scenario || '';
+        const challenges = (ob.answers.biggest_challenges || []).join(', ');
+        const selfConscious = ob.answers.most_self_conscious || '';
+        const goals = (ob.answers.why_english || []).join(', ');
+        const level = ob.recommendation?.level || '';
+        const location = ob.answers.location || '';
+        const inUK = location && (location.toLowerCase().includes('uk') || location.toLowerCase().includes('londra') || location.toLowerCase().includes('manchester') || location.toLowerCase().includes('birmingham') || ob.answers.years_in_uk);
+
+        greetingContent = `[Studentul ${firstName} tocmai s-a conectat la chat.
+
+Ai aceste informații din chestionarul lor de onboarding:
+- Visul/scopul lor: "${dream}"
+- De ce studiază engleza: ${goals}
+- Provocările principale: ${challenges}
+- Ce îi face să se simtă nesiguri: ${selfConscious}
+- Nivelul lor evaluat: ${level}
+${inUK ? `- Locuiesc în UK (${location})` : `- Locație: ${location}`}
+
+Salută-l PERSONAL și SPECIFIC — alege UN singur element din visul sau provocările lor care rezonează cel mai mult și menționează-l natural, ca și cum știai deja cine sunt. 
+NU lista toate informațiile. NU fii generic ("bun venit!", "cum merge?"). 
+Fă-i să simtă că sunt VĂZUȚI — că cineva știe DE CE sunt aici.
+Fii cald, scurt (2-3 propoziții), și lasă ușa deschisă pentru conversație.]`;
+      } else {
+        greetingContent = `[Studentul tocmai s-a conectat la chat. Salută-l pe ${firstName} cu căldură, întreabă cum se simte și cum merge cu învățarea. Fii scurt și prietenos — max 2-3 propoziții.]`;
+      }
+
       messages.push({
         role: 'user',
-        content: `[Studentul tocmai s-a conectat la chat. Salută-l pe ${student.first_name || 'student'} cu căldură, întreabă cum se simte și cum merge cu învățarea. Fii scurt și prietenos — max 2-3 propoziții.]`
+        content: greetingContent
       });
     } else {
       messages.push({
