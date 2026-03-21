@@ -96,10 +96,15 @@ module.exports = async function handler(req, res) {
           contextNote = `Informații din chestionarul de onboarding:\n- Visul lor: "${dream}"\n- De ce studiază: ${goals}\n- Provocări: ${challenges}\n- Nesiguranță: ${selfConscious}\n- Nivel: ${level}\n${inUK ? `- UK (${location})` : `- Locație: ${location}`}`;
         }
 
-        const personalityHint = !cp ? '' :
-          cp.personality_type === 'anxious_perfectionist' ? '\nATENȚIE: Perfecționist anxios — validează că e OK să înceapă imperfect, nu adăuga presiune.' :
-          cp.personality_type === 'lapsed_learner' ? '\nATENȚIE: A mai abandonat — zero vinovăție, bucuros că s-a întors.' :
-          cp.personality_type === 'busy_professional' ? '\nATENȚIE: Timp limitat — un singur pas concret, scurt.' : '';
+        // Tag-based hints — multiple tags can apply simultaneously
+        const tags = cp?.tags || [];
+        const hintParts = [];
+        if (tags.includes('se-blochează')) hintParts.push('Se blochează când vorbește — fii cald, nu pune presiune pe producție.');
+        if (tags.includes('lapsed')) hintParts.push('A mai abandonat înainte — zero vinovăție, nicio referire la pauze ca eșec.');
+        if (tags.includes('time-short')) hintParts.push('Timp foarte limitat — fii scurt, oferă UN singur pas concret.');
+        if (tags.includes('perfectionist')) hintParts.push('Tinde spre perfecționism — normalizează greșelile explicit.');
+        if (tags.includes('visător')) hintParts.push('Are un vis clar — leagă orice feedback de visul lor când e natural.');
+        const personalityHint = hintParts.length ? '\n' + hintParts.join(' ') : '';
 
         greetingContent = `[Studentul ${firstName} tocmai s-a conectat la chat pentru prima dată.
 
