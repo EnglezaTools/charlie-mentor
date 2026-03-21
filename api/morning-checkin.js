@@ -51,12 +51,23 @@ module.exports = async (req, res) => {
     // --- Get student records from Supabase (including preferences) ---
     const { data: studentRecords } = await supabase
       .from('students')
-      .select('heartbeat_id, current_streak, longest_streak, last_login_date, last_charlie_proactive, last_interaction, preferences');
+      .select('heartbeat_id, email, current_streak, longest_streak, last_login_date, last_charlie_proactive, last_interaction, preferences, onboarding_responses');
 
     const studentMap = {};
     if (studentRecords) {
       for (const s of studentRecords) {
         studentMap[s.heartbeat_id] = s;
+      }
+    }
+
+    // --- Get student_hub data (financial + learning health) ---
+    const { data: hubRecords } = await supabase
+      .from('student_hub')
+      .select('email, health_status, plan, activity_status, learning_streak, tools_active, total_learning_mins, fluency_vault, reading_room, hartley_files, conversation_training, last_study_date');
+    const hubMap = {};
+    if (hubRecords) {
+      for (const h of hubRecords) {
+        if (h.email) hubMap[h.email] = h;
       }
     }
 
@@ -144,6 +155,7 @@ module.exports = async (req, res) => {
           member,
           studentData,
           activityData,
+          hubData: hubMap[studentData.email || member.email] || {},
           prefs,
           score,
           reason: buildReason(member, studentData, activityData, prefs)
@@ -158,9 +170,9 @@ module.exports = async (req, res) => {
     console.log(`[Morning] ${scored.length} students flagged, messaging top ${toMessage.length}`);
 
     // --- Generate and send messages ---
-    for (const { member, studentData, activityData, prefs, reason } of toMessage) {
+    for (const { member, studentData, activityData, hubData, prefs, reason } of toMessage) {
       try {
-        const message = await generateProactiveMessage(member, studentData, activityData, reason, prefs || {});
+        const message = await generateProactiveMessage(member, studentData, activityData, reason, prefs || {}, hubData || {});
         if (!message) {
           summary.skipped++;
           continue;
@@ -317,7 +329,7 @@ function buildReason(member, studentData, activityData = {}, prefs = {}) {
 /**
  * Generate a personalised proactive message using OpenAI
  */
-async function generateProactiveMessage(member, studentData, activityData = {}, reason, prefs = {}) {
+async function generateProactiveMessage(member, studentData, activityData = {}, reason, prefs = {}, hubData = {}) {
   try {
     const firstName = member.first_name || member.name || 'prietene';
     const now = Date.now();
@@ -338,11 +350,53 @@ async function generateProactiveMessage(member, studentData, activityData = {}, 
       return !gl.includes('member') && !gl.includes('log-in') && !gl.includes('active');
     });
 
-    // Extract onboarding context
-    const onboarding = member.onboarding_responses || {};
-    const onboardingText = Object.keys(onboarding).length > 0
-      ? Object.entries(onboarding).map(([k, v]) => `${k}: ${v}`).join('; ')
-      : null;
+    // ── Extract onboarding profile (Fix 1) ──
+    const onboarding = studentData.onboarding_responses || {};
+    const charlieProfile = onboarding.charlie || {};
+    const tags = charlieProfile.tags || [];
+    const primaryDream = charlieProfile.primary_dream || null;
+    const biggestBarrier = charlieProfile.biggest_barrier || null;
+    const statedHoursPerWeek = onboarding.answers?.hours_per_week || null;
+    const hasOnboarding = Object.keys(onboarding).length > 0;
+
+    // ── Fix 3: Milestone detection ──
+    const milestones = [];
+    if (currentStreak === 7) milestones.push('7-zile-streak');
+    if (currentStreak === 30) milestones.push('30-zile-streak');
+    if (currentStreak === 100) milestones.push('100-zile-streak');
+    if (activityData.courseCompletions?.length >= 1 && activityData.lastCourseDate) {
+      const daysSinceFirst = Math.floor((now - new Date(activityData.lastCourseDate).getTime()) / (24 * 3600 * 1000));
+      if (daysSinceFirst <= 2 && activityData.courseCompletions.length === 1) milestones.push('primul-curs');
+    }
+    if (hubData.fluency_vault && !hubData._vault_prev) milestones.push('primul-instrument');
+
+    // ── Fix 2: Dream callback — surface every ~10-14 days ──
+    let includeDreamCallback = false;
+    if (primaryDream) {
+      if (!studentData.last_charlie_proactive) {
+        includeDreamCallback = true; // Never messaged — definitely include
+      } else {
+        const daysSinceProactive = Math.floor(
+          (now - new Date(studentData.last_charlie_proactive).getTime()) / (24 * 3600 * 1000)
+        );
+        if (daysSinceProactive >= 10) includeDreamCallback = true;
+      }
+    }
+
+    // ── Fix 5: Pattern recognition — stated intentions vs actual behaviour ──
+    const patternNotes = [];
+    if (statedHoursPerWeek && parseInt(statedHoursPerWeek) >= 5 && daysSinceLogin >= 7) {
+      patternNotes.push('a spus că are timp suficient dar nu s-a conectat — gap între intenție și realitate, abordează ușor, fără reproș');
+    }
+    if (tags.includes('time-short') && (!activityData.courseCompletions || activityData.courseCompletions.length === 0) && activityData.posts === 0) {
+      patternNotes.push('timp limitat conform profilului — validează că orice micro-pas contează, nu pune presiune');
+    }
+    if (tags.includes('se-blochează') && activityData.courseCompletions?.length > 0) {
+      patternNotes.push('profilul arată blocaj la vorbire dar avansează în cursuri — validează progresul concret');
+    }
+    if (tags.includes('lapsed') && daysSinceLogin >= 5) {
+      patternNotes.push('a mai abandonat înainte — re-entry fără rușine, ton de "bine că ești înapoi", zero vinovăție');
+    }
 
     // Build preferences context for the prompt
     const prefsLines = [];
@@ -358,7 +412,19 @@ async function generateProactiveMessage(member, studentData, activityData = {}, 
       activityData.posts > 0 ? `- Postări în comunitate (ultimele 14 zile): ${activityData.posts}` : '- Nu a postat în comunitate recent',
       activityData.courseCompletions?.length > 0 ? `- Cursuri finalizate recent: ${activityData.courseCompletions.join(', ')}` : null,
       groups.length > 0 ? `- Cursuri/grupuri: ${groups.slice(0, 5).join(', ')}` : null,
-      onboardingText ? `- Context înregistrare: ${onboardingText}` : null,
+      hubData.health_status ? `- Sănătate cont: ${hubData.health_status}` : null,
+      hubData.plan ? `- Plan: ${hubData.plan}` : null,
+      // Onboarding profile
+      hasOnboarding && tags.length > 0 ? `- Profilul studentului [tags]: ${tags.join(', ')}` : null,
+      hasOnboarding && primaryDream ? `- Visul/obiectivul declarat: "${primaryDream}"` : null,
+      hasOnboarding && biggestBarrier ? `- Bariera principală: ${biggestBarrier}` : null,
+      hasOnboarding && charlieProfile.charlie_opening_note ? `- Notă Charlie: ${charlieProfile.charlie_opening_note}` : null,
+      // Milestones (Fix 3)
+      milestones.length > 0 ? `- ⭐ MILESTONE ATINS: ${milestones.join(', ')}` : null,
+      // Pattern notes (Fix 5)
+      patternNotes.length > 0 ? `- 🔍 Observație comportamentală: ${patternNotes.join(' | ')}` : null,
+      // Dream callback flag (Fix 2)
+      includeDreamCallback && primaryDream ? `- 💭 CALLBACK VIS: Leagă natural mesajul de visul lor ("${primaryDream}") — subtil, nu forțat` : null,
       prefsLines.length > 0 ? `\nPreferințele studentului:\n${prefsLines.join('\n')}` : null,
       `- Motiv check-in: ${reason}`
     ].filter(Boolean).join('\n');
@@ -398,9 +464,15 @@ ${suggestionsContext ? '\n' + suggestionsContext : ''}
 INSTRUCȚIUNI:
 - Maximum 2-3 propoziții (dacă menționezi lecții, pot fi 3-4)
 - Nu începe cu "Bună ziua" sau formule formale
-- Fii natural și cald, ca și cum ai scrie unui prieten
-- Adaptează tonul la situație (nou = entuziasm, inactiv = îngrijorare caldă + invitație curioasă, streak oprit = încurajare)
-- Dacă există sugestii de lecții și studentul e inactiv, menționează 1-2 ca o curiozitate ușoară: "mi-ar plăcea să îți arăt X sau Y — spune-mi dacă ești curios/ă"
+- Fii natural și cald — ca un DM de la un prieten apropiat, nu un email corporativ
+- Adaptează tonul la situație:
+  * NOU (primele 7 zile): entuziasm cald; dacă ai profil onboarding, referință specifică la ce au spus
+  * INACTIV (7+ zile): îngrijorare caldă + invitație curioasă, ZERO vinovăție; dacă tag-ul "lapsed" e prezent, ton de "bine că ești înapoi" — nu "de ce ai lipsit"
+  * STREAK OPRIT: "viața se întâmplă", revenire fără presiune, un pas mic
+  * ⭐ MILESTONE: celebrare specifică și autentică — menționează exact milestone-ul (ex: "7 zile la rând e real!")
+- Dacă apare 💭 CALLBACK VIS în context: leagă mesajul de visul/obiectivul lor — subtil, ca o reamintire naturală, nu forțat
+- Dacă există 🔍 Observație comportamentală: ține cont în ton (ex: timp limitat → nu pune presiune, lapsed → zero rușine)
+- Dacă există sugestii de lecții și studentul e inactiv, menționează 1-2 ca curiozitate ușoară
 - Nu fi dramatic sau exagerat
 - Semnează scurt: "— Charlie 👋" la final`
       }
