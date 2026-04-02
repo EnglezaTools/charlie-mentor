@@ -113,8 +113,11 @@ async function syncAll() {
   }
 
   // Sync members (paginated)
+  // NOTE: Heartbeat API ignores page param and returns all users every time.
+  // Deduplicate by ID to avoid storing duplicates in cache.
   try {
     let allMembers = [];
+    const seenIds = new Set();
     let page = 1;
     let hasMore = true;
 
@@ -129,9 +132,16 @@ async function syncAll() {
       const users = data.data || data.users || data || [];
       const arr = Array.isArray(users) ? users : [];
 
-      allMembers = allMembers.concat(arr);
+      const newUsers = arr.filter(u => {
+        const id = u.id || u._id;
+        if (!id || seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+      });
 
-      if (arr.length < 100) {
+      allMembers = allMembers.concat(newUsers);
+
+      if (newUsers.length === 0 || arr.length < 100) {
         hasMore = false;
       } else {
         page++;
@@ -379,8 +389,11 @@ async function getAllMembers() {
   }
 
   // Fallback: live API
+  // NOTE: Heartbeat API ignores the page param and returns all users on every page.
+  // Deduplicate by ID to avoid counting members multiple times.
   try {
     let allMembers = [];
+    const seenIds = new Set();
     let page = 1;
     while (page <= 30) {
       const resp = await fetch(`${HEARTBEAT_BASE}/users?page=${page}&per_page=100`, {
@@ -390,8 +403,15 @@ async function getAllMembers() {
       const data = await resp.json();
       const users = data.data || data.users || data || [];
       const arr = Array.isArray(users) ? users : [];
-      allMembers = allMembers.concat(arr);
-      if (arr.length < 100) break;
+      // If all IDs already seen, the API is repeating — stop immediately
+      const newUsers = arr.filter(u => {
+        const id = u.id || u._id;
+        if (!id || seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+      });
+      allMembers = allMembers.concat(newUsers);
+      if (newUsers.length === 0 || arr.length < 100) break;
       page++;
     }
     return allMembers;

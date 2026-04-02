@@ -1,14 +1,11 @@
 const { supabase } = require('./_lib/supabase');
-const { buildSystemPrompt } = require('./_lib/charlie');
-const OpenAI = require('openai');
+const { buildSystemPrompt, callOpenAI } = require('./_lib/charlie');
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type'
 };
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 module.exports = async function handler(req, res) {
   // CORS preflight
@@ -40,10 +37,14 @@ module.exports = async function handler(req, res) {
       return res.status(401).json({ detail: 'Token invalid. Te rugăm să te autentifici din nou.' });
     }
 
-    // Update last_seen
+    // Update last_seen + FIX 1: Reset unanswered counter when student engages
     await supabase
       .from('students')
-      .update({ last_seen: new Date().toISOString() })
+      .update({
+        last_seen: new Date().toISOString(),
+        last_interaction: new Date().toISOString(),
+        charlie_unanswered_count: 0  // Student responded — reset the cap
+      })
       .eq('id', student.id);
 
     // Determine if this is a greeting
@@ -129,15 +130,16 @@ Fii cald, scurt (2-3 propoziții), lasă ușa deschisă pentru conversație.]`;
       });
     }
 
-    // Call OpenAI
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: messages,
-      temperature: 0.8,
-      max_tokens: 500
-    });
+    // Detect first real interaction (no prior student messages in history)
+    const isFirstRealMessage = !isGreeting && pastMessages.filter(m => m.role === 'user').length === 0;
 
-    const reply = completion.choices[0]?.message?.content || 'Hmm, nu am reușit să generez un răspuns. Încearcă din nou!';
+    // Call Claude via callOpenAI wrapper
+    let reply = await callOpenAI(messages, { max_tokens: 500, temperature: 0.8 }) || 'Hmm, nu am reușit să generez un răspuns. Încearcă din nou!';
+
+    // Append monitoring disclosure on first real interaction
+    if (isFirstRealMessage) {
+      reply += '\n\n---\n_Notă: Conversațiile din acest chat pot fi revizuite de echipa academiei în scopuri de control al calității și îmbunătățire a serviciului._';
+    }
 
     // Save messages to conversations (skip saving the __GREETING__ trigger)
     if (!isGreeting) {

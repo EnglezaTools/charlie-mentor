@@ -3,9 +3,17 @@
   "functions": {
     "api/webhook.js": { "maxDuration": 60 },
     "api/morning-checkin.js": { "maxDuration": 300 },
-    "api/midnight-processor.js": { "maxDuration": 300 }
+    "api/midnight-processor.js": { "maxDuration": 300 },
+    "api/onboarding-submit.js": { "maxDuration": 30 }
   },
 
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/survey",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

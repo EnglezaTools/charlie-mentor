@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chestionar de Bun Venit — Engleza Britanică Academy</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/survey/styles.css" />
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Tasklet polyfill: bridges window.tasklet calls to our API -->
+  <script>
+    window.tasklet = {
+      // writeFileToDisk: no-op in hosted version — Supabase is the source of truth
+      writeFileToDisk: async function(path, content) {
+        console.log('[survey] writeFileToDisk (no-op in hosted mode):', path);
+        return;
+      },
+
+      // runTool: route SQL execute calls through our secure API endpoint
+      runTool: async function(toolName, params) {
+        if (toolName === 'conn_hn53bstxtcf3t803yh69__execute_sql') {
+          const response = await fetch('/api/onboarding-submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'sql', query: params.query, project_id: params.project_id })
+          });
+          if (!response.ok) {
+            const err = await response.text();
+            throw new Error('SQL error: ' + err);
+          }
+          return response.json();
+        }
+        console.warn('[survey] Unknown tool call:', toolName);
+        return null;
+      },
+
+      // sendMessageToAgent: notify admin of new onboarding submission
+      sendMessageToAgent: async function(message) {
+        await fetch('/api/onboarding-submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'notify', message })
+        });
+      }
+    };
+  </script>
+
+  <script src="/survey/bundle.js"></script>
+</body>
+</html>
